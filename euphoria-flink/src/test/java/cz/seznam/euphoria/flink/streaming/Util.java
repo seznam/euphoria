@@ -27,7 +27,7 @@ class Util {
     return FlatMap.of(input)
         .using((UnaryFunctor<Pair<F, S>, Triple<W, F, S>>) (elem, context) -> {
           Object actualWindow = context.getWindow();
-          if (actualWindow != null && expectedWindowType.isAssignableFrom(actualWindow.getClass())) {
+          if (actualWindow != null && !expectedWindowType.isAssignableFrom(actualWindow.getClass())) {
             throw new IllegalStateException(
                     "Encountered window of type " + actualWindow.getClass()
                     + " but expected only " + expectedWindowType);
