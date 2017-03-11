@@ -151,10 +151,6 @@
             <source>1.8</source>
             <target>1.8</target>
             <encoding>UTF-8</encoding>
-            <compilerArgs>
-              <arg>-Xlint:unchecked</arg>
-              <arg>-Werror</arg>
-            </compilerArgs>
           </configuration>
         </plugin>
 
@@ -309,6 +305,22 @@
       </activation>
       <build>
         <plugins>
+          <!-- turn compiler warnings into errors -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-compiler-plugin</artifactId>
+            <version>3.3</version>
+            <configuration>
+              <source>1.8</source>
+              <target>1.8</target>
+              <encoding>UTF-8</encoding>
+              <compilerArgs>
+                <arg>-Xlint:unchecked</arg>
+                <arg>-Werror</arg>
+              </compilerArgs>
+            </configuration>
+          </plugin>
+
           <!--  generate and attach sources jar -->
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>
