@@ -747,11 +747,11 @@ public class ReduceByKeyTest extends AbstractOperatorTest {
 
         ArrayList<Long> triggerTimes = new ArrayList<>(TETETS_SEEN_TIMES_TRIGGER);
         triggerTimes.sort(Comparator.naturalOrder());
-        assertEquals(asList(15_000L, 19_999L, 25_000L, 29_999L), triggerTimes);
+        assertEquals(asList(19_999L, 19_999L, 29_999L, 29_999L), triggerTimes);
 
         ArrayList<Long> assignerTimes = new ArrayList<>(TETETS_SEEN_TIMES_ASSIGNER);
         assignerTimes.sort(Comparator.naturalOrder());
-        assertEquals(asList(15_000L, 19_999L, 25_000L, 29_999L), assignerTimes);
+        assertEquals(asList(19_999L, 19_999L, 29_999L, 29_999L), assignerTimes);
       }
     });
   }
