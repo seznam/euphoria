@@ -287,27 +287,30 @@ public class WindowOperator<KEY, WID extends Window>
   private void processTriggerResult(WID window,
                                     Trigger.TriggerResult tr,
                                     @Nullable MergingWindowSet<WID> mergingWindowSet) {
-    WID stateWindow = window;
-    State windowState;
-
-    if (windowing instanceof MergingWindowing) {
-      Objects.requireNonNull(mergingWindowSet);
-      stateWindow = mergingWindowSet.getStateWindow(window);
-      windowState = getWindowState(stateWindow);
-    } else {
-      windowState = getWindowState(window);
-    }
 
     if (tr.isFlush() || tr.isPurge()) {
-      if (tr.isFlush()) {
-        windowState.flush();
+      WID stateWindow = window;
+      State windowState;
+
+      if (windowing instanceof MergingWindowing) {
+        Objects.requireNonNull(mergingWindowSet);
+        stateWindow = mergingWindowSet.getStateWindow(window);
+        windowState = getWindowState(stateWindow);
+      } else {
+        windowState = getWindowState(window);
       }
 
-      if (tr.isPurge()) {
-        windowState.close();
-        trigger.onClear(window, triggerContext);
-        removeWindow(window, mergingWindowSet);
-        removeState(stateWindow);
+      if (tr.isFlush() || tr.isPurge()) {
+        if (tr.isFlush()) {
+          windowState.flush();
+        }
+
+        if (tr.isPurge()) {
+          windowState.close();
+          trigger.onClear(window, triggerContext);
+          removeWindow(window, mergingWindowSet);
+          removeState(stateWindow);
+        }
       }
     }
   }
