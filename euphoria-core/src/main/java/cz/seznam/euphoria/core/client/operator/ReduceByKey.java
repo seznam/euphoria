@@ -313,7 +313,7 @@ public class ReduceByKey<
 
       @Override
       public State<E, E> apply(Context<E> ctx, StorageProvider storageProvider) {
-        return new CombiningReduceState<E>(ctx, storageProvider, r);
+        return new CombiningReduceState<>(ctx, storageProvider, r);
       }
     }
 
@@ -377,7 +377,7 @@ public class ReduceByKey<
       @Override
       public NonCombiningReduceState<VALUE, OUT>
       apply(Context<OUT> ctx, StorageProvider storageProvider) {
-        return new NonCombiningReduceState<VALUE, OUT>(ctx, storageProvider, r);
+        return new NonCombiningReduceState<>(ctx, storageProvider, r);
       }
     }
 
@@ -386,7 +386,7 @@ public class ReduceByKey<
             ListStorageDescriptor.of("values", (Class) Object.class);
 
     private final ReduceFunction<VALUE, OUT> reducer;
-    private final ListStorage<VALUE> reducableValues;
+    private final ListStorage<VALUE> reducibleValues;
 
     NonCombiningReduceState(Context<OUT> context,
                             StorageProvider storageProvider,
@@ -396,28 +396,28 @@ public class ReduceByKey<
 
       @SuppressWarnings("unchecked")
       ListStorage<VALUE> ls = storageProvider.getListStorage(STORAGE_DESC);
-      reducableValues = ls;
+      reducibleValues = ls;
     }
 
     @Override
     public void add(VALUE element) {
-      reducableValues.add(element);
+      reducibleValues.add(element);
     }
 
     @Override
     public void flush() {
-      OUT result = reducer.apply(reducableValues.get());
+      OUT result = reducer.apply(reducibleValues.get());
       getContext().collect(result);
     }
 
     @Override
     public void close() {
-      reducableValues.clear();
+      reducibleValues.clear();
     }
 
     @Override
     public void addAll(NonCombiningReduceState<VALUE, OUT> other) {
-      this.reducableValues.addAll(other.reducableValues.get());
+      this.reducibleValues.addAll(other.reducibleValues.get());
     }
   }
 }
