@@ -15,9 +15,8 @@
  */
 package cz.seznam.euphoria.core.client.operator;
 
-import cz.seznam.euphoria.core.client.dataset.windowing.Windowing;
 import cz.seznam.euphoria.core.client.dataset.windowing.Window;
-import cz.seznam.euphoria.core.client.functional.UnaryFunction;
+import cz.seznam.euphoria.core.client.dataset.windowing.Windowing;
 
 /**
  * Operator aware of windows.
@@ -30,8 +29,8 @@ public interface WindowAware<IN, W extends Window> {
   Windowing<IN, W> getWindowing();
 
   /**
-   * @return the window time assigner extracts timestamp from given element
+   * @return optional function to extract even time from a given element
    */
-  UnaryFunction<IN, Long> getEventTimeAssigner();
+  ExtractEventTime<IN> getEventTimeAssigner();
 
 }
