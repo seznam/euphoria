@@ -316,6 +316,15 @@ public class WindowingTest extends AbstractOperatorTest {
 
   static final AtomicBoolean ON_CLEAR_VALIDATED = new AtomicBoolean(false);
 
+  /**
+   * Validates a trigger's #onClear method operates in the right context of
+   * merged windows.<p>
+   *
+   * A trigger's lifecycle is guaranteed only on stream processing; batch
+   * processing has more freedom and doesn't necessarily invoke the
+   * trigger#onClear method.
+   */
+  @Processing(Processing.Type.UNBOUNDED)
   @Test
   public void testSessionWindowingTriggerStateConsistency() {
     ON_CLEAR_VALIDATED.set(false);
