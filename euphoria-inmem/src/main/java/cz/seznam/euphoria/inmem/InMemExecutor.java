@@ -15,6 +15,8 @@
  */
 package cz.seznam.euphoria.inmem;
 
+import cz.seznam.euphoria.inmem.operator.Collector;
+import cz.seznam.euphoria.inmem.operator.WindowedElementCollector;
 import cz.seznam.euphoria.core.client.dataset.partitioning.Partitioning;
 import cz.seznam.euphoria.core.client.dataset.windowing.GlobalWindowing;
 import cz.seznam.euphoria.core.client.dataset.windowing.MergingWindowing;
@@ -41,6 +43,7 @@ import cz.seznam.euphoria.core.client.util.Pair;
 import cz.seznam.euphoria.core.executor.Executor;
 import cz.seznam.euphoria.core.executor.FlowUnfolder;
 import cz.seznam.euphoria.core.executor.FlowUnfolder.InputOperator;
+import cz.seznam.euphoria.inmem.operator.ReduceStateByKeyReducer;
 import cz.seznam.euphoria.shaded.guava.com.google.common.collect.Iterables;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -564,7 +567,7 @@ public class InMemExecutor implements Executor {
               item.setTimestamp(eventTimeFn.extractTimestamp(item.getElement()));
             }
             WindowedElementCollector outC = new WindowedElementCollector(
-                collector, item::getTimestamp);
+                collector, item::getTimestamp, Datum.Factory.INSTANCE);
             if (item.isElement()) {
               // transform
               outC.setWindow(item.getWindow());
@@ -642,20 +645,39 @@ public class InMemExecutor implements Executor {
     for (BlockingQueue<Datum> q : repartitioned) {
       final BlockingQueue<Datum> output = new ArrayBlockingQueue<>(5000);
       outputSuppliers.add(QueueSupplier.wrap(output));
-      executor.execute(new ReduceStateByKeyReducer(
+      ReduceStateByKeyReducer reducer = new ReduceStateByKeyReducer(
           reduceStateByKey,
           reduceStateByKey.getName() + "#part-" + (i++),
-          q, output, keyExtractor, valueExtractor,
+          q, output,
+          InMemExecutor.QueueCollector.wrap(output),
+          keyExtractor, valueExtractor,
           // ~ on batch input we use a noop trigger scheduler
           // ~ if using attached windowing, we have to use watermark triggering
           reduceStateByKey.input().isBounded()
-            ? new NoopTriggerScheduler()
-            : (windowing != null
+              ? new NoopTriggerScheduler()
+              : (windowing != null
                   ? triggerSchedulerSupplier.get()
                   : new WatermarkTriggerScheduler(watermarkDuration)),
           watermarkEmitStrategySupplier.get(),
           storageProvider,
-          allowEarlyEmitting));
+          allowEarlyEmitting,
+          Datum.Factory.INSTANCE);
+      reducer.setup();
+      executor.execute(() -> {
+        boolean run = true;
+        while (run) {
+          try {
+            Datum item = q.take();
+            reducer.accept(item);
+            if (item.isEndOfStream()) {
+              break;
+            }
+          } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            break;
+          }
+        }
+      });
     }
     return outputSuppliers;
   }

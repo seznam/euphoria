@@ -15,6 +15,7 @@
  */
 package cz.seznam.euphoria.inmem;
 
+import cz.seznam.euphoria.inmem.operator.KeyedWindow;
 import cz.seznam.euphoria.shaded.guava.com.google.common.collect.ArrayListMultimap;
 import cz.seznam.euphoria.shaded.guava.com.google.common.collect.Multimap;
 import cz.seznam.euphoria.shaded.guava.com.google.common.collect.Multimaps;
