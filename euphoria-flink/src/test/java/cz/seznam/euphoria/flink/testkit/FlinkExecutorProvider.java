@@ -27,6 +27,7 @@ import java.io.File;
 
 public interface FlinkExecutorProvider extends ExecutorProvider {
 
+  @Override
   default ExecutorEnvironment newExecutorEnvironment() throws Exception {
     String path = "/tmp/.flink-test-" + System.currentTimeMillis();
     RocksDBStateBackend backend = new RocksDBStateBackend("file://" + path);
