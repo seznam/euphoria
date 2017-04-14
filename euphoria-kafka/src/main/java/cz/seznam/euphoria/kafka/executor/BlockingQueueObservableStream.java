@@ -15,6 +15,7 @@
  */
 package cz.seznam.euphoria.kafka.executor;
 
+import cz.seznam.euphoria.inmem.operator.StreamElement;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -24,7 +25,8 @@ import java.util.concurrent.BlockingQueue;
 /**
  * An {@code ObservableStream} backed up by {@code BlockingQueue}.
  */
-public class BlockingQueueObservableStream<T> implements ObservableStream<T> {
+public class BlockingQueueObservableStream<T extends StreamElement<?>>
+    implements ObservableStream<T> {
 
   /**
    * Create observable stream from given {@code BlockingQueue}.
@@ -32,11 +34,14 @@ public class BlockingQueueObservableStream<T> implements ObservableStream<T> {
    * @param queue the {@code BlockingQueue} representing single partition of a partitioned stream
    * @param partitionId ID of the partition that the queue represents
    */
-  public static <T> BlockingQueueObservableStream<T> wrap(
+  public static <T extends StreamElement<?>> BlockingQueueObservableStream<T> wrap(
       BlockingQueue<T> queue,
       int partitionId) {
 
-    return new BlockingQueueObservableStream<>(queue, partitionId);
+    BlockingQueueObservableStream<T> ret;
+    ret = new BlockingQueueObservableStream<>(queue, partitionId);
+    ret.runThread();
+    return ret;
   }
 
   final BlockingQueue<T> queue;
@@ -67,12 +72,20 @@ public class BlockingQueueObservableStream<T> implements ObservableStream<T> {
     observer.onRegistered();
   }
 
+  private void runThread() {
+    this.forwardThread.start();
+  }
+
   void forwardQueue() {
     while (!Thread.currentThread().isInterrupted()) {
       try {
         T elem = queue.take();
-        synchronized (observers) {
-          observers.forEach(o -> o.onNext(partitionId, elem));
+        if (!elem.isEndOfStream()) {
+          synchronized (observers) {
+            observers.forEach(o -> o.onNext(partitionId, elem));
+          }
+        } else {
+          break;
         }
       } catch (InterruptedException ex) {
         break;

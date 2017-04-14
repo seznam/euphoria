@@ -55,11 +55,16 @@ public class KafkaObservableStream<T extends StreamElement<Object>>
       KafkaConsumer<byte[], byte[]> consumer = createConsumer(name, bootstrapServers, topic);
       observer.onRegistered();
       try {
-        while (!Thread.currentThread().isInterrupted()) {
+        boolean finished = false;
+        while (!finished && !Thread.currentThread().isInterrupted()) {
           ConsumerRecords<byte[], byte[]> polled = consumer.poll(100);
           for (ConsumerRecord<byte[], byte[]> r : polled) {
             T elem = deserializer.apply(r);
-            observer.onNext(r.partition(), elem);
+            if (!elem.isEndOfStream()) {
+              observer.onNext(r.partition(), elem);
+            } else {
+              finished = true;
+            }
             consumer.commitAsync();
           }
         }

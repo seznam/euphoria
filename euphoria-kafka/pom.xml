@@ -47,6 +47,12 @@
 
     <dependency>
       <groupId>${project.groupId}</groupId>
+      <artifactId>euphoria-operator-testkit</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>${project.groupId}</groupId>
       <artifactId>shaded-guava</artifactId>
     </dependency>
 

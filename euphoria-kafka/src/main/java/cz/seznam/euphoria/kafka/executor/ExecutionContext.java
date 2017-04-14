@@ -19,16 +19,21 @@ import cz.seznam.euphoria.core.client.dataset.Dataset;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A context for providing readers for datasets.
  */
 public class ExecutionContext {
 
+  private static final Logger LOG = LoggerFactory.getLogger(ExecutionContext.class);
+
   final Map<Dataset<?>, ObservableStream<KafkaStreamElement>> streams = new HashMap<>();
 
   public void register(Dataset<?> dataset, ObservableStream<KafkaStreamElement> stream) {
     streams.put(dataset, stream);
+    LOG.debug("Added stream {} for dataset {}", stream, dataset);
   }
 
   public ObservableStream<KafkaStreamElement> get(Dataset<?> dataset) {

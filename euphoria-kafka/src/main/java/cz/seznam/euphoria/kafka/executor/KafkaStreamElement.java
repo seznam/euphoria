@@ -110,4 +110,16 @@ class KafkaStreamElement implements StreamElement<Object> {
     return element;
   }
 
+  @Override
+  public String toString() {
+    return "KafkaStreamElement("
+        + "element=" + element
+        + ", window=" + window
+        + ", stamp=" + stamp
+        + ", type=" + type
+        + ")";
+  }
+
+
+
 }
