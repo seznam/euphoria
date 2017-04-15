@@ -20,7 +20,9 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 /**
  * An {@code ObservableStream} backed up by {@code BlockingQueue}.
@@ -31,45 +33,54 @@ public class BlockingQueueObservableStream<T extends StreamElement<?>>
   /**
    * Create observable stream from given {@code BlockingQueue}.
    * This observable will be able to observe only single partition
+   * @param operator name of the operator outputting this stream (for debug purposes)
    * @param queue the {@code BlockingQueue} representing single partition of a partitioned stream
    * @param partitionId ID of the partition that the queue represents
    */
   public static <T extends StreamElement<?>> BlockingQueueObservableStream<T> wrap(
+      String operator,
       BlockingQueue<T> queue,
       int partitionId) {
 
     BlockingQueueObservableStream<T> ret;
-    ret = new BlockingQueueObservableStream<>(queue, partitionId);
+    ret = new BlockingQueueObservableStream<>(operator, queue, partitionId);
     ret.runThread();
     return ret;
   }
 
+  final String operator;
   final BlockingQueue<T> queue;
   final int partitionId;
   final Set<String> observerNames = new HashSet<>();
+  final BlockingQueue<StreamObserver<T>> toRegister = new ArrayBlockingQueue<>(50);
   final List<StreamObserver<T>> observers = new ArrayList<>();
   final Thread forwardThread;
 
   private BlockingQueueObservableStream(
+      String operator,
       BlockingQueue<T> queue,
       int partitionId) {
 
+    this.operator = operator;
     this.queue = queue;
     this.partitionId = partitionId;
     forwardThread = new Thread(this::forwardQueue);
+    forwardThread.setDaemon(true);
+    forwardThread.setName("blockingQueue-forward-of:" + operator);
   }
 
   @Override
   public void observe(String name, StreamObserver<T> observer) {
     if (observerNames.contains(name)) {
-      // FIXME: support this!!!
+      // we do not support rebalancing of partitions at this time
       throw new UnsupportedOperationException(
-          "In this POC, branching of in-process streams is not supported.");
+          "Multiple consumers of in-process streams is not supported.");
     }
-    synchronized (observers) {
-      observers.add(observer);
+    try {
+      toRegister.put(observer);
+    } catch (InterruptedException ex) {
+      Thread.currentThread().interrupt();
     }
-    observer.onRegistered();
   }
 
   private void runThread() {
@@ -79,17 +90,30 @@ public class BlockingQueueObservableStream<T extends StreamElement<?>>
   void forwardQueue() {
     while (!Thread.currentThread().isInterrupted()) {
       try {
-        T elem = queue.take();
-        if (!elem.isEndOfStream()) {
-          synchronized (observers) {
-            observers.forEach(o -> o.onNext(partitionId, elem));
+        if (!toRegister.isEmpty()) {
+          List<StreamObserver<T>> newObservers = new ArrayList<>();
+          toRegister.drainTo(newObservers);
+          observers.addAll(newObservers);
+          newObservers.forEach(StreamObserver::onRegistered);
+        }
+        T elem = queue.poll(100, TimeUnit.MILLISECONDS);
+        if (elem != null) {
+          if (!elem.isEndOfStream()) {
+            synchronized (observers) {
+              if (observers.isEmpty()) {
+                throw new RuntimeException(
+                    "No observers registered for element " + elem + " in queue of operator " + operator);
+              }
+              observers.forEach(o -> o.onNext(partitionId, elem));
+            }
+          } else {
+            break;
           }
-        } else {
-          break;
         }
       } catch (InterruptedException ex) {
         break;
       } catch (Throwable thrwbl) {
+        thrwbl.printStackTrace();
         synchronized (observers) {
           observers.forEach(o -> o.onError(thrwbl));
         }

@@ -15,7 +15,6 @@
  */
 package cz.seznam.euphoria.kafka.executor;
 
-import cz.seznam.euphoria.inmem.operator.StreamElement;
 import cz.seznam.euphoria.shaded.guava.com.google.common.base.Joiner;
 import java.util.Properties;
 import java.util.concurrent.Executor;
@@ -29,19 +28,19 @@ import org.apache.kafka.common.serialization.Serdes;
 /**
  * A stream stored in Apache Kafka topic.
  */
-public class KafkaObservableStream<T extends StreamElement<Object>>
-    implements ObservableStream<T> {
+public class KafkaObservableStream
+    implements ObservableStream<KafkaStreamElement> {
 
   private final String topic;
   private final Executor executor;
   private final String[] bootstrapServers;
-  private final Function<ConsumerRecord<byte[], byte[]>, T> deserializer;
+  private final Function<byte[], Object> deserializer;
 
   public KafkaObservableStream(
       Executor executor,
       String[] bootstrapServers,
       String topic,
-      Function<ConsumerRecord<byte[], byte[]>, T> deserializer) {
+      Function<byte[], Object> deserializer) {
 
     this.topic = topic;
     this.executor = executor;
@@ -50,7 +49,7 @@ public class KafkaObservableStream<T extends StreamElement<Object>>
   }
 
   @Override
-  public void observe(String name, StreamObserver<T> observer) {
+  public void observe(String name, StreamObserver<KafkaStreamElement> observer) {
     executor.execute(() -> {
       KafkaConsumer<byte[], byte[]> consumer = createConsumer(name, bootstrapServers, topic);
       observer.onRegistered();
@@ -59,9 +58,11 @@ public class KafkaObservableStream<T extends StreamElement<Object>>
         while (!finished && !Thread.currentThread().isInterrupted()) {
           ConsumerRecords<byte[], byte[]> polled = consumer.poll(100);
           for (ConsumerRecord<byte[], byte[]> r : polled) {
-            T elem = deserializer.apply(r);
-            if (!elem.isEndOfStream()) {
-              observer.onNext(r.partition(), elem);
+            if (r.value() != null) {
+              // FIXME: window serialization
+              Object elem = deserializer.apply(r.value());
+              observer.onNext(
+                  r.partition(), KafkaStreamElement.FACTORY.data(elem, null, r.timestamp()));
             } else {
               finished = true;
             }

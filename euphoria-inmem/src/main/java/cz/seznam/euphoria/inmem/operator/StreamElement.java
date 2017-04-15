@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package cz.seznam.euphoria.inmem.operator;
 
 import cz.seznam.euphoria.core.client.dataset.windowing.Window;
@@ -29,13 +30,22 @@ public interface StreamElement<T> extends WindowedElement<Window, T> {
    */
   boolean isElement();
 
-  /** Is this end-of-stream message? */
+  /**
+   * Check if this is an end-of-stream message.
+   * @return true if this element is end of stream
+   */
   boolean isEndOfStream();
 
-  /** Is this watermark message? */
+  /**
+   * Check if this is watermark.
+   * @return true if this is watermark
+   */
   boolean isWatermark();
 
-  /** Is this window trigger event? */
+  /**
+   * Check if this is window trigger event.
+   * @return true if this is window trigger
+   */
   boolean isWindowTrigger();
 
 }

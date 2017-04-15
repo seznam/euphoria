@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package cz.seznam.euphoria.kafka.executor;
 
 import cz.seznam.euphoria.core.client.dataset.windowing.Window;
@@ -62,16 +63,27 @@ class KafkaStreamElement implements StreamElement<Object> {
       @Nullable Object element,
       @Nullable Window window,
       long stamp,
-      Type type) {
-
+      Type type,
+      int sourcePartition) {
+    
     this.element = element;
     this.window = window;
     this.stamp = stamp;
-    this.type = type;
+    this.type = type;       
+    this.sourcePartition = sourcePartition;
+  }
+
+  private KafkaStreamElement(
+      @Nullable Object element,
+      @Nullable Window window,
+      long stamp,
+      Type type) {
+    this(element, window, stamp, type, -1);
   }
 
   @Nullable final Object element;
   @Nullable final Window window;
+  final int sourcePartition;
   final long stamp;
   final Type type;
 
@@ -121,5 +133,8 @@ class KafkaStreamElement implements StreamElement<Object> {
   }
 
 
+  public int getSourcePartition() {
+    return sourcePartition;
+  }
 
 }

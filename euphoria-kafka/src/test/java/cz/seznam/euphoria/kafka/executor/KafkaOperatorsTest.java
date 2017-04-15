@@ -13,17 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package cz.seznam.euphoria.kafka.executor;
 
-import cz.seznam.euphoria.core.client.dataset.Dataset;
 import cz.seznam.euphoria.core.executor.Executor;
 import cz.seznam.euphoria.operator.test.AllOperatorsSuite;
+import cz.seznam.euphoria.operator.test.FilterTest;
 import cz.seznam.euphoria.operator.test.FlatMapTest;
+import cz.seznam.euphoria.operator.test.MapElementsTest;
+import cz.seznam.euphoria.operator.test.RepartitionTest;
+import cz.seznam.euphoria.operator.test.UnionTest;
 import cz.seznam.euphoria.operator.test.junit.ExecutorEnvironment;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.function.Function;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.runners.Suite;
 
 /**
@@ -31,7 +33,20 @@ import org.junit.runners.Suite;
  * Euphoria operators semantics.
  */
 @Suite.SuiteClasses({
-    FlatMapTest.class
+    // CountByKeyTest.class,
+    // DistinctTest.class,
+    FilterTest.class,
+    FlatMapTest.class,
+    // JoinTest.class,
+    // JoinWindowEnforcementTest.class,
+    MapElementsTest.class,
+    // ReduceByKeyTest.class,
+    // ReduceStateByKeyTest.class,
+    RepartitionTest.class,
+    // SumByKeyTest.class,
+    // TopPerKeyTest.class,
+    UnionTest.class,
+    // WindowingTest.class,
 })
 public class KafkaOperatorsTest extends AllOperatorsSuite {
 
@@ -41,18 +56,8 @@ public class KafkaOperatorsTest extends AllOperatorsSuite {
       ExecutorService service = Executors.newCachedThreadPool();
       @Override
       public Executor getExecutor() {
-        return new KafkaExecutor(service, new String[] { }) {
 
-          @Override
-          ObservableStream<?> kafkaObservableStream(
-              Dataset<?> dataset,
-              Function<ConsumerRecord<byte[], byte[]>, KafkaStreamElement> deserializer) {
-
-            // FIXME
-            return null;
-          }
-
-        };
+        return new TestKafkaExecutor(service);
       }
 
       @Override

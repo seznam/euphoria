@@ -33,7 +33,21 @@ public class ExecutionContext {
 
   public void register(Dataset<?> dataset, ObservableStream<KafkaStreamElement> stream) {
     streams.put(dataset, stream);
-    LOG.debug("Added stream {} for dataset {}", stream, dataset);
+    if (LOG.isDebugEnabled()) {
+      if (dataset.getProducer() != null) {
+        LOG.debug(
+            "Added stream {} for dataset {}, which is output of {}",
+            new String[] {
+              stream.toString(), dataset.toString(),
+              dataset.getProducer().toString()
+            });
+      } else {
+        LOG.debug("Added stream {} for INPUT dataset {} with source {}",
+            new String[] {
+              stream.toString(), dataset.toString(), dataset.getSource().toString()
+            });
+      }
+    }
   }
 
   public ObservableStream<KafkaStreamElement> get(Dataset<?> dataset) {

@@ -25,23 +25,33 @@ public interface StreamElementFactory<T> {
   /**
    * Retrieve a stream element that wraps the given data element
    * inside given window and with assigned timestamp.
+   * @param element the data element
+   * @param window window associated with the element
+   * @param stamp timestamp of creation of the element
+   * @return {@code StreamElement} instance
    */
   StreamElement<T> data(T element, Window window, long stamp);
 
 
   /**
    * Retrieve watermark element.
+   * @param stamp stamp of the watermark
+   * @return {@code StreamElement} instance
    */
   StreamElement<T> watermark(long stamp);
 
 
   /**
    * Retrieve window trigger element.
+   * @param window the window to trigger
+   * @param stamp timestamp of the trigger
+   * @return {@code StreamElement} instance
    */
   StreamElement<T> windowTrigger(Window window, long stamp);
 
   /**
    * Retrieve end-of-stream element.
+   * @return {@code StreamElement} instance
    */
   StreamElement<T> endOfStream();
 
