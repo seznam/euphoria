@@ -59,7 +59,7 @@ class KafkaStreamElement implements StreamElement<Object> {
     EOS
   }
 
-  private KafkaStreamElement(
+  KafkaStreamElement(
       @Nullable Object element,
       @Nullable Window window,
       long stamp,
@@ -73,11 +73,12 @@ class KafkaStreamElement implements StreamElement<Object> {
     this.sourcePartition = sourcePartition;
   }
 
-  private KafkaStreamElement(
+  KafkaStreamElement(
       @Nullable Object element,
       @Nullable Window window,
       long stamp,
       Type type) {
+    
     this(element, window, stamp, type, -1);
   }
 

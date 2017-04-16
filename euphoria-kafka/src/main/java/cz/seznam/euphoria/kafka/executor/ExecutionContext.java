@@ -52,7 +52,9 @@ public class ExecutionContext {
 
   public ObservableStream<KafkaStreamElement> get(Dataset<?> dataset) {
     return Objects.requireNonNull(
-        streams.get(dataset), "Cannot find stream for dataset " + dataset);
+        streams.get(dataset),
+        "Cannot find stream for dataset " + dataset
+            + " produced by " + dataset.getProducer());
   }
 
 }

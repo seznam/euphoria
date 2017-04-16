@@ -52,10 +52,16 @@ class TestKafkaExecutor extends KafkaExecutor {
     BlockingQueue<KafkaStreamElement> queue = new ArrayBlockingQueue<>(100);
     topicQueues.put(
         topic,
-        BlockingQueueObservableStream.wrap(topic, queue, 0));
+        BlockingQueueObservableStream.wrap(
+            getExecutor(), topic, queue, 0));
     return (elem, source, target, callback) -> {
       try {
-        queue.put(elem);
+        queue.put(new KafkaStreamElement(
+            elem.getElement(),
+            elem.getWindow(),
+            elem.getTimestamp(),
+            elem.type,
+            source));
         callback.apply(true, null);
       } catch (InterruptedException ex) {
         Thread.currentThread().interrupt();

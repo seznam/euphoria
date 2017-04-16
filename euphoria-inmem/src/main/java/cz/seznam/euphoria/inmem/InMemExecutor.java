@@ -648,9 +648,9 @@ public class InMemExecutor implements Executor {
       ReduceStateByKeyReducer reducer = new ReduceStateByKeyReducer(
           reduceStateByKey,
           reduceStateByKey.getName() + "#part-" + (i++),
-          q, output,
           InMemExecutor.QueueCollector.wrap(output),
-          keyExtractor, valueExtractor,
+          keyExtractor,
+          valueExtractor,
           // ~ on batch input we use a noop trigger scheduler
           // ~ if using attached windowing, we have to use watermark triggering
           reduceStateByKey.input().isBounded()

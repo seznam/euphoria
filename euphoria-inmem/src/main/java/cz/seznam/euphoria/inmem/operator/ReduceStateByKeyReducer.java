@@ -52,12 +52,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.BlockingQueue;
 import java.util.function.Supplier;
 
-import static java.util.Objects.requireNonNull;
 import java.util.function.Consumer;
 import static java.util.stream.Collectors.toSet;
+import static java.util.Objects.requireNonNull;
 
 public class ReduceStateByKeyReducer implements Consumer<StreamElement<Object>> {
 
@@ -406,8 +405,7 @@ public class ReduceStateByKeyReducer implements Consumer<StreamElement<Object>> 
     final StorageProvider storageProvider;
     final WindowRegistry wRegistry = new WindowRegistry();
 
-    final Collector<StreamElement> stateOutput;
-    final BlockingQueue<StreamElement> rawOutput;
+    final Collector<StreamElement> output;
     final TriggerScheduler<Window, Object> triggering;
     final StateFactory stateFactory;
     final StateMerger stateMerger;
@@ -418,18 +416,17 @@ public class ReduceStateByKeyReducer implements Consumer<StreamElement<Object>> 
     private Map<Window, Long> flushedWindows = new HashMap<>();
 
     private ProcessingState(
-            BlockingQueue<StreamElement> output,
-            Collector<StreamElement> stateOutput,
-            TriggerScheduler<Window, Object> triggering,
-            StateFactory stateFactory,
-            StateMerger stateMerger,
-            StorageProvider storageProvider,
-            boolean allowEarlyEmitting) {
+        BlockingQueue<StreamElement> output,
+        Collector<StreamElement> stateOutput,
+        TriggerScheduler<Window, Object> triggering,
+        StateFactory stateFactory,
+        StateMerger stateMerger,
+        StorageProvider storageProvider,
+        boolean allowEarlyEmitting) {
 
       this.triggerStorage = new ScopedStorage(storageProvider);
       this.storageProvider = storageProvider;
-      this.stateOutput = stateOutput;
-      this.rawOutput = output;
+      this.output = output;
       this.triggering = requireNonNull(triggering);
       this.stateFactory = requireNonNull(stateFactory);
       this.stateMerger = requireNonNull(stateMerger);
@@ -447,11 +444,7 @@ public class ReduceStateByKeyReducer implements Consumer<StreamElement<Object>> 
 
     // ~ signal eos further down the output channel
     void closeOutput() {
-      try {
-        this.rawOutput.put(elementFactory.endOfStream());
-      } catch (InterruptedException e) {
-        throw new RuntimeException(e);
-      }
+      this.output.collect(elementFactory.endOfStream());
     }
 
     /**
@@ -594,16 +587,11 @@ public class ReduceStateByKeyReducer implements Consumer<StreamElement<Object>> 
 
     void emitWatermark() {
       final long stamp = getCurrentWatermark();
-      try {
-        rawOutput.put(elementFactory.watermark(stamp));
-      } catch (InterruptedException ex) {
-        Thread.currentThread().interrupt();
-      }
+      output.collect(elementFactory.watermark(stamp));
     }
   } // ~ end of ProcessingState
 
-  private final BlockingQueue<StreamElement> input;
-  private final BlockingQueue<StreamElement> output;
+  private final Collector<StreamElement> output;
 
   private final boolean isAttachedWindowing;
   private final Windowing windowing;
@@ -637,8 +625,7 @@ public class ReduceStateByKeyReducer implements Consumer<StreamElement<Object>> 
                           StreamElementFactory elementFactory) {
 
     this.name = requireNonNull(name);
-    this.input = (BlockingQueue) requireNonNull(input);
-    this.output = (BlockingQueue) requireNonNull(output);
+    this.output = (Collector) requireNonNull(output);
     this.isAttachedWindowing = operator.getWindowing() == null;
     this.windowing = isAttachedWindowing
         ? AttachedWindowing.INSTANCE : operator.getWindowing();
@@ -647,8 +634,9 @@ public class ReduceStateByKeyReducer implements Consumer<StreamElement<Object>> 
     this.watermarkStrategy = requireNonNull(watermarkStrategy);
     this.trigger = requireNonNull(windowing.getTrigger());
     this.scheduler = requireNonNull(scheduler);
+    this.elementFactory = elementFactory;
     this.processing = new ProcessingState(
-        (BlockingQueue) output, (Collector) stateOutput, scheduler,
+        (Collector) output, scheduler,
         requireNonNull(operator.getStateFactory()),
         requireNonNull(operator.getStateMerger()),
         storageProvider,
@@ -737,13 +725,13 @@ public class ReduceStateByKeyReducer implements Consumer<StreamElement<Object>> 
     // ~ send notifications to downstream operators about flushed windows
     long max = 0;
     for (Map.Entry<Window, Long> w : processing.takeFlushedWindows().entrySet()) {
-      output.put(elementFactory.windowTrigger(w.getKey(), w.getValue()));
+      output.collect(elementFactory.windowTrigger(w.getKey(), w.getValue()));
       long flushTime = w.getValue();
       if (flushTime > max) {
         max = flushTime;
       }
     }
-    output.put(elementFactory.watermark(max));
+    output.collect(elementFactory.watermark(max));
   }
 
   private void processInput(WindowedElement element) {
@@ -853,7 +841,7 @@ public class ReduceStateByKeyReducer implements Consumer<StreamElement<Object>> 
     // close all states
     processing.flushAndCloseAllWindows();
     processing.closeOutput();
-    output.put(eos);
+    output.collect(eos);
   }
 
   // retrieve current watermark stamp

@@ -20,9 +20,8 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Executor;
 
 /**
  * An {@code ObservableStream} backed up by {@code BlockingQueue}.
@@ -33,34 +32,39 @@ public class BlockingQueueObservableStream<T extends StreamElement<?>>
   /**
    * Create observable stream from given {@code BlockingQueue}.
    * This observable will be able to observe only single partition
+   * @param executor the executor to run asynchronous operations with
    * @param operator name of the operator outputting this stream (for debug purposes)
    * @param queue the {@code BlockingQueue} representing single partition of a partitioned stream
    * @param partitionId ID of the partition that the queue represents
    */
   public static <T extends StreamElement<?>> BlockingQueueObservableStream<T> wrap(
+      Executor executor,
       String operator,
       BlockingQueue<T> queue,
       int partitionId) {
 
     BlockingQueueObservableStream<T> ret;
-    ret = new BlockingQueueObservableStream<>(operator, queue, partitionId);
+    ret = new BlockingQueueObservableStream<>(
+        executor, operator, queue, partitionId);
     ret.runThread();
     return ret;
   }
 
+  final Executor executor;
   final String operator;
   final BlockingQueue<T> queue;
   final int partitionId;
   final Set<String> observerNames = new HashSet<>();
-  final BlockingQueue<StreamObserver<T>> toRegister = new ArrayBlockingQueue<>(50);
   final List<StreamObserver<T>> observers = new ArrayList<>();
   final Thread forwardThread;
 
   private BlockingQueueObservableStream(
+      Executor executor,
       String operator,
       BlockingQueue<T> queue,
       int partitionId) {
 
+    this.executor = executor;
     this.operator = operator;
     this.queue = queue;
     this.partitionId = partitionId;
@@ -76,11 +80,12 @@ public class BlockingQueueObservableStream<T extends StreamElement<?>>
       throw new UnsupportedOperationException(
           "Multiple consumers of in-process streams is not supported.");
     }
-    try {
-      toRegister.put(observer);
-    } catch (InterruptedException ex) {
-      Thread.currentThread().interrupt();
-    }
+    executor.execute(() -> {
+      synchronized (observers) {
+        observers.add(observer);
+      }
+      observer.onRegistered();
+    });
   }
 
   private void runThread() {
@@ -90,30 +95,21 @@ public class BlockingQueueObservableStream<T extends StreamElement<?>>
   void forwardQueue() {
     while (!Thread.currentThread().isInterrupted()) {
       try {
-        if (!toRegister.isEmpty()) {
-          List<StreamObserver<T>> newObservers = new ArrayList<>();
-          toRegister.drainTo(newObservers);
-          observers.addAll(newObservers);
-          newObservers.forEach(StreamObserver::onRegistered);
-        }
-        T elem = queue.poll(100, TimeUnit.MILLISECONDS);
-        if (elem != null) {
-          if (!elem.isEndOfStream()) {
-            synchronized (observers) {
-              if (observers.isEmpty()) {
-                throw new RuntimeException(
-                    "No observers registered for element " + elem + " in queue of operator " + operator);
-              }
-              observers.forEach(o -> o.onNext(partitionId, elem));
+        T elem = queue.take();
+        if (!elem.isEndOfStream()) {
+          synchronized (observers) {
+            if (observers.isEmpty()) {
+              throw new RuntimeException(
+                  "No observers registered for element " + elem + " in queue of operator " + operator);
             }
-          } else {
-            break;
+            observers.forEach(o -> o.onNext(partitionId, elem));
           }
+        } else {
+          break;
         }
       } catch (InterruptedException ex) {
         break;
       } catch (Throwable thrwbl) {
-        thrwbl.printStackTrace();
         synchronized (observers) {
           observers.forEach(o -> o.onError(thrwbl));
         }
