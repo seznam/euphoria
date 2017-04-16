@@ -16,10 +16,11 @@
 
 package cz.seznam.euphoria.kafka.executor;
 
+import cz.seznam.euphoria.core.client.util.Pair;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.function.Function;
@@ -31,7 +32,7 @@ import java.util.function.Function;
  */
 class TestKafkaExecutor extends KafkaExecutor {
 
-  Map<String, ObservableStream<KafkaStreamElement>> topicQueues = new HashMap<>();
+  final Map<String, ObservableStream<KafkaStreamElement>> topicQueues = new HashMap<>();
 
   TestKafkaExecutor(ExecutorService executor) {
     super(executor, new String[] { });
@@ -48,15 +49,16 @@ class TestKafkaExecutor extends KafkaExecutor {
   }
 
   @Override
-  OutputWriter outputWriter(String topic) {
-    BlockingQueue<KafkaStreamElement> queue = new ArrayBlockingQueue<>(100);
+  OutputWriter outputWriter(String topic, int parallelism) {
+    List<Pair<BlockingQueue<KafkaStreamElement>, Integer>> queues;
+    queues = createOutputQueues(parallelism);
     topicQueues.put(
         topic,
-        BlockingQueueObservableStream.wrap(
-            getExecutor(), topic, queue, 0));
+        BlockingQueueObservableStream.wrap(getExecutor(), topic, queues));
+    
     return (elem, source, target, callback) -> {
       try {
-        queue.put(new KafkaStreamElement(
+        queues.get(target).getFirst().put(new KafkaStreamElement(
             elem.getElement(),
             elem.getWindow(),
             elem.getTimestamp(),

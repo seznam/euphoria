@@ -838,6 +838,7 @@ public class ReduceStateByKeyReducer implements Consumer<StreamElement<Object>> 
     scheduler.updateStamp(Long.MAX_VALUE);
     // ~ stop triggers - there actually should be none left
     scheduler.close();
+    watermarkStrategy.close();
     // close all states
     processing.flushAndCloseAllWindows();
     processing.closeOutput();

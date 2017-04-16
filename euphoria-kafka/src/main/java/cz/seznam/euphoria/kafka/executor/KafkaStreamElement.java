@@ -84,9 +84,9 @@ class KafkaStreamElement implements StreamElement<Object> {
 
   @Nullable final Object element;
   @Nullable final Window window;
-  final int sourcePartition;
-  final long stamp;
+  final int sourcePartition;  
   final Type type;
+  long stamp;
 
   @Override
   public boolean isElement() {
@@ -136,6 +136,10 @@ class KafkaStreamElement implements StreamElement<Object> {
 
   public int getSourcePartition() {
     return sourcePartition;
+  }
+
+  void reassignTimestamp(long timestamp) {
+    this.stamp = timestamp;
   }
 
 }

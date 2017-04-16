@@ -15,6 +15,8 @@
  */
 package cz.seznam.euphoria.kafka.executor;
 
+import java.util.List;
+
 /**
  * An observer of streaming data.
  */
@@ -25,6 +27,13 @@ public interface StreamObserver<T> {
    */
   default void onRegistered() {
     
+  }
+
+  /**
+   * Called each time partitions are assigned or the assignment is changed.
+   */
+  default void onAssign(List<Integer> partitions) {
+
   }
 
   /**

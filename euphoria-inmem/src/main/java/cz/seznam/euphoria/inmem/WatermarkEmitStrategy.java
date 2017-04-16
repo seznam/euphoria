@@ -29,7 +29,7 @@ public interface WatermarkEmitStrategy {
   /** Default strategy used in inmem executor. */
   public static class Default implements WatermarkEmitStrategy {
 
-    final static ScheduledExecutorService scheduler = new ScheduledThreadPoolExecutor(1, new ThreadFactoryBuilder()
+    final ScheduledExecutorService scheduler = new ScheduledThreadPoolExecutor(1, new ThreadFactoryBuilder()
             .setNameFormat("watermark-%d")
             .setDaemon(true)
             .build());

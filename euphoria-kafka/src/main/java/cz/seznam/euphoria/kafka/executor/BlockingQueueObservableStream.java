@@ -15,6 +15,7 @@
  */
 package cz.seznam.euphoria.kafka.executor;
 
+import cz.seznam.euphoria.core.client.util.Pair;
 import cz.seznam.euphoria.inmem.operator.StreamElement;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -22,6 +23,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * An {@code ObservableStream} backed up by {@code BlockingQueue}.
@@ -34,43 +37,44 @@ public class BlockingQueueObservableStream<T extends StreamElement<?>>
    * This observable will be able to observe only single partition
    * @param executor the executor to run asynchronous operations with
    * @param operator name of the operator outputting this stream (for debug purposes)
-   * @param queue the {@code BlockingQueue} representing single partition of a partitioned stream
+   * @param queues pair of {@code BlockingQueue} representing partitions of a partitioned stream
+   *               and corresponding partition ID
    * @param partitionId ID of the partition that the queue represents
    */
   public static <T extends StreamElement<?>> BlockingQueueObservableStream<T> wrap(
       Executor executor,
       String operator,
-      BlockingQueue<T> queue,
-      int partitionId) {
+      List<Pair<BlockingQueue<T>, Integer>> queues) {
 
     BlockingQueueObservableStream<T> ret;
     ret = new BlockingQueueObservableStream<>(
-        executor, operator, queue, partitionId);
-    ret.runThread();
+        executor, operator, queues);
     return ret;
   }
 
   final Executor executor;
   final String operator;
-  final BlockingQueue<T> queue;
-  final int partitionId;
+  final List<Pair<BlockingQueue<T>, Integer>> queues;
+  
   final Set<String> observerNames = new HashSet<>();
   final List<StreamObserver<T>> observers = new ArrayList<>();
-  final Thread forwardThread;
+
+  final AtomicInteger finished = new AtomicInteger(0);
+  final AtomicBoolean error = new AtomicBoolean(false);
 
   private BlockingQueueObservableStream(
       Executor executor,
       String operator,
-      BlockingQueue<T> queue,
-      int partitionId) {
+      List<Pair<BlockingQueue<T>, Integer>> queues) {
 
     this.executor = executor;
     this.operator = operator;
-    this.queue = queue;
-    this.partitionId = partitionId;
-    forwardThread = new Thread(this::forwardQueue);
-    forwardThread.setDaemon(true);
-    forwardThread.setName("blockingQueue-forward-of:" + operator);
+    this.queues = queues;
+    for (Pair<BlockingQueue<T>, Integer> q : queues) {
+      executor.execute(() -> {
+        forwardQueue(q.getFirst(), q.getSecond());
+      });
+    }
   }
 
   @Override
@@ -88,21 +92,22 @@ public class BlockingQueueObservableStream<T extends StreamElement<?>>
     });
   }
 
-  private void runThread() {
-    this.forwardThread.start();
-  }
-
-  void forwardQueue() {
-    while (!Thread.currentThread().isInterrupted()) {
+  void forwardQueue(BlockingQueue<T> queue, int partitionId) {
+    while (!error.get() && !Thread.currentThread().isInterrupted()) {
       try {
         T elem = queue.take();
         if (!elem.isEndOfStream()) {
           synchronized (observers) {
             if (observers.isEmpty()) {
               throw new RuntimeException(
-                  "No observers registered for element " + elem + " in queue of operator " + operator);
+                  "No observers registered for element "
+                      + elem + " in queue of operator " + operator);
             }
-            observers.forEach(o -> o.onNext(partitionId, elem));
+            observers.forEach(o -> {
+              synchronized (o) {
+                o.onNext(partitionId, elem);
+              }
+            });
           }
         } else {
           break;
@@ -113,12 +118,20 @@ public class BlockingQueueObservableStream<T extends StreamElement<?>>
         synchronized (observers) {
           observers.forEach(o -> o.onError(thrwbl));
         }
+        error.set(true);
         return;
       }
     }
-    synchronized (observers) {
-      observers.forEach(o -> o.onCompleted());
+    if (finished.incrementAndGet() == queues.size()) {
+      synchronized (observers) {
+        observers.forEach(o -> o.onCompleted());
+      }
     }
+  }
+
+  @Override
+  public int size() {
+    return queues.size();
   }
 
 }

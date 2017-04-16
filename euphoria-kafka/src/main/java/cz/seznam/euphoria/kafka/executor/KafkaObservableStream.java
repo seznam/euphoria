@@ -16,13 +16,22 @@
 package cz.seznam.euphoria.kafka.executor;
 
 import cz.seznam.euphoria.shaded.guava.com.google.common.base.Joiner;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.Serdes;
 
 /**
@@ -35,6 +44,7 @@ public class KafkaObservableStream
   private final Executor executor;
   private final String[] bootstrapServers;
   private final Function<byte[], Object> deserializer;
+  private final AtomicReference<List<Integer>> assignedPartitions;
 
   public KafkaObservableStream(
       Executor executor,
@@ -46,15 +56,19 @@ public class KafkaObservableStream
     this.executor = executor;
     this.bootstrapServers = bootstrapServers;
     this.deserializer = deserializer;
+    this.assignedPartitions = new AtomicReference<>();
   }
 
   @Override
   public void observe(String name, StreamObserver<KafkaStreamElement> observer) {
     executor.execute(() -> {
-      KafkaConsumer<byte[], byte[]> consumer = createConsumer(name, bootstrapServers, topic);
+      KafkaConsumer<byte[], byte[]> consumer;
+
+      consumer = createConsumer(name, bootstrapServers, topic);
       observer.onRegistered();
       try {
         boolean finished = false;
+        Set<Integer> finishedPartitions = new HashSet<>();
         while (!finished && !Thread.currentThread().isInterrupted()) {
           ConsumerRecords<byte[], byte[]> polled = consumer.poll(100);
           for (ConsumerRecord<byte[], byte[]> r : polled) {
@@ -62,9 +76,13 @@ public class KafkaObservableStream
               // FIXME: window serialization
               Object elem = deserializer.apply(r.value());
               observer.onNext(
-                  r.partition(), KafkaStreamElement.FACTORY.data(elem, null, r.timestamp()));
+                  r.partition(),
+                  KafkaStreamElement.FACTORY.data(elem, null, r.timestamp()));
             } else {
-              finished = true;
+              finishedPartitions.add(r.partition());
+              if (finishedPartitions.size() == assignedPartitions.get().size()) {
+                finished = true;
+              }
             }
             consumer.commitAsync();
           }
@@ -92,7 +110,32 @@ public class KafkaObservableStream
         ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
         Serdes.ByteArray().deserializer().getClass());
     
-    return new KafkaConsumer<>(props);
+    KafkaConsumer<byte[], byte[]> consumer = new KafkaConsumer<>(props);
+    consumer.subscribe(Arrays.asList(topic), rebalanceListener());
+    return consumer;
+  }
+
+  @Override
+  public int size() {
+    return assignedPartitions.get().size();
+  }
+
+  private ConsumerRebalanceListener rebalanceListener() {
+    return new ConsumerRebalanceListener() {
+
+      @Override
+      public void onPartitionsRevoked(Collection<TopicPartition> clctn) {
+        // nop
+      }
+
+      @Override
+      public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
+        assignedPartitions.set(partitions
+            .stream().map(TopicPartition::partition)
+            .collect(Collectors.toList()));
+      }
+
+    };
   }
 
 }
