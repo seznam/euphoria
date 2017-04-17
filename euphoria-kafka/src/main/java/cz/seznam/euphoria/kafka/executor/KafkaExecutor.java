@@ -1,11 +1,11 @@
-/*
- * Copyright 2016-2017 Seznam.cz, a.s..
+/**
+ * Copyright 2016-2017 Seznam.cz, a.s.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -302,7 +302,6 @@ public class KafkaExecutor implements Executor {
       @Override
       public void onRegistered() {
         runningParts.countDown();
-        awaitLatch(latch);
         LOG.info("Started receiving part of operator {}", op.getName());
       }
 
@@ -373,7 +372,6 @@ public class KafkaExecutor implements Executor {
       @Override
       public void onRegistered() {
         runningParts.countDown();
-        awaitLatch(latch);
         LOG.info("Started sending part of operator {}", op.getName());
       }
 
@@ -455,7 +453,7 @@ public class KafkaExecutor implements Executor {
         @Override
         public void onRegistered() {
           partitionsLatch.countDown();
-          awaitLatch(latch);
+          LOG.info("Started operator {}", op.getName());
         }
         
         @Override
@@ -557,7 +555,7 @@ public class KafkaExecutor implements Executor {
         executor, op.getName(), outputs);
     context.register(op.output(), outputStream);
 
-    CountDownLatch parts = new CountDownLatch(2);
+    CountDownLatch parts = new CountDownLatch(3);
 
     stream.observe(
         nameForConsumerOf(input) + "_send",
@@ -612,7 +610,6 @@ public class KafkaExecutor implements Executor {
       @Override
       public void onRegistered() {
         parts.countDown();
-        awaitLatch(latch);
         LOG.info("Started reducing part of operator {}", op.getName());
       }
       @Override
@@ -868,7 +865,6 @@ public class KafkaExecutor implements Executor {
               + op.getName());
     }
     latch.countDown();
-    awaitLatch(latch);
     LOG.info("Started operator {}", op);
   }
 

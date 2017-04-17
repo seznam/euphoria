@@ -1,11 +1,11 @@
-/*
- * Copyright 2016-2017 Seznam.cz, a.s..
+/**
+ * Copyright 2016-2017 Seznam.cz, a.s.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -31,6 +31,7 @@ public interface StreamObserver<T> {
 
   /**
    * Called each time partitions are assigned or the assignment is changed.
+   * @param partitions partitions assigned to the observer
    */
   default void onAssign(List<Integer> partitions) {
 
@@ -38,11 +39,14 @@ public interface StreamObserver<T> {
 
   /**
    * Observe next data element.
+   * @param partitionId ID of partition of the input element
+   * @param elem the input element
    */
   void onNext(int partitionId, T elem);
 
   /**
    * Error occurred on the stream.
+   * @param err the error thrown during observing of the stream
    */
   void onError(Throwable err);
 
