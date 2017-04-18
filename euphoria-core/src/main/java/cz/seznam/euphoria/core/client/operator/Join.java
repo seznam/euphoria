@@ -39,7 +39,10 @@ import java.util.Collection;
 import java.util.Objects;
 
 /**
- * Join two datasets by given key producing single new dataset.
+ * Join two datasets by given key producing single new dataset.<p>
+ *
+ * Unless explicitly specified, the number of output partitions will equal
+ * {@code max(left.numPartitions(), right.numPartitions()}.
  */
 @Recommended(
     reason =
