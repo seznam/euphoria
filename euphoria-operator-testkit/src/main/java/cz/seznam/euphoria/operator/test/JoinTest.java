@@ -70,6 +70,7 @@ public class JoinTest extends AbstractOperatorTest {
             .by(e -> e, e -> (int) (e % 10))
             .using((Integer l, Long r, Context<String> c) -> c.collect(l + "+" + r))
             .setPartitioner(e -> e % 2)
+            .setNumPartitions(2)
             .outer()
             .output();
       }
@@ -122,6 +123,7 @@ public class JoinTest extends AbstractOperatorTest {
             .by(e -> e, e -> (int) (e % 10))
             .using((Integer l, Long r, Context<String> c) -> c.collect(l + "+" + r))
             .setPartitioner(e -> e % 2)
+            .setNumPartitions(2)
             .output();
       }
 

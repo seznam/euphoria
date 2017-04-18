@@ -135,7 +135,8 @@ public class JoinWindowEnforcementTest extends AbstractOperatorTest {
             Join.of(left, right)
                 .by(e -> e, e -> e)
                 .using((l, r, c) -> c.collect(new Object()))
-                .setPartitioner(e -> 0);
+                .setPartitioner(e -> 0)
+                .setNumPartitions(1);
         if (joinWindowing == null) {
           return joinBuilder.output();
         } else {
