@@ -17,12 +17,12 @@ package cz.seznam.euphoria.flink.batch;
 
 import cz.seznam.euphoria.core.client.operator.Union;
 import cz.seznam.euphoria.flink.FlinkOperator;
-import java.util.List;
-import java.util.Optional;
 import org.apache.flink.api.java.DataSet;
 
+import java.util.List;
+
 /**
- * Translator of {@code Union} operator.
+ * Translator for the {@link Union} operator.
  */
 class UnionTranslator implements BatchOperatorTranslator<Union> {
 
@@ -37,9 +37,6 @@ class UnionTranslator implements BatchOperatorTranslator<Union> {
       throw new IllegalStateException(
               "Should have two datasets on input, got " + inputs.size());
     }
-    Optional<DataSet> reduce = inputs.stream().reduce((l, r) -> l.union(r));
-    return reduce.get();
+    return inputs.get(0).union(inputs.get(1));
   }
-
-
 }

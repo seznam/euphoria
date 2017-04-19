@@ -17,8 +17,6 @@ package cz.seznam.euphoria.flink;
 
 import cz.seznam.euphoria.core.client.graph.DAG;
 import cz.seznam.euphoria.core.client.operator.Operator;
-import cz.seznam.euphoria.core.client.operator.PartitioningAware;
-import cz.seznam.euphoria.core.executor.FlowUnfolder;
 
 import java.util.HashMap;
 import java.util.List;
@@ -86,17 +84,13 @@ public class FlowOptimizer {
       FlinkOperator flinkOp = n.get();
       Operator<?, ?> op = flinkOp.getOriginalOperator();
 
-      if (op instanceof FlowUnfolder.InputOperator) {
-        int partitions = op.output().getSource().getPartitions().size();
-        flinkOp.setParallelism(Math.min(maxParallelism, partitions));
-      } else if (op instanceof PartitioningAware) {
-        int partitions = ((PartitioningAware) op).getPartitioning().getNumPartitions();
-        flinkOp.setParallelism(Math.min(maxParallelism, partitions));
+      int np = Math.min(maxParallelism, op.output().getNumPartitions());
+      if (np > 0) {
+        flinkOp.setParallelism(np);
       } else {
         // other operators inherit parallelism from their parents
-        flinkOp.setParallelism(
-                n.getParents().stream().mapToInt(
-                        p -> p.get().getParallelism()).max().getAsInt());
+        np = n.getParents().stream().mapToInt(p -> p.get().getParallelism()).max().orElse(maxParallelism);
+        flinkOp.setParallelism(np);
       }
     });
 
