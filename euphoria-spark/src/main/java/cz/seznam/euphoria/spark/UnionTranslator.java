@@ -20,7 +20,6 @@ import org.apache.spark.api.java.JavaRDD;
 
 import java.util.List;
 
-
 class UnionTranslator implements SparkOperatorTranslator<Union> {
 
   @Override

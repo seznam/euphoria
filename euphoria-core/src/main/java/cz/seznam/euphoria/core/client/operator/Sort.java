@@ -296,8 +296,8 @@ public class Sort<
 
     @Override
     public Integer apply(IN what) {
-      int ret = partitioner.getPartition(sortByFn.apply(what)) % numPartitions;
-      return ret;
+      int partitionId = partitioner.getPartition(sortByFn.apply(what));
+      return (partitionId & Integer.MAX_VALUE) % numPartitions;
     }
   }
 }
