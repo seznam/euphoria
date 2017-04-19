@@ -27,10 +27,7 @@ public class UnionTest {
     Flow flow = Flow.create("TEST");
     Dataset<String> left = Util.createMockDataset(flow, 2);
     Dataset<String> right = Util.createMockDataset(flow, 3);
-
-    Dataset<String> unioned = Union.named("Union1")
-            .of(left, right)
-            .output();
+    Dataset<String> unioned = Union.named("Union1").of(left, right).output();
 
     assertEquals(flow, unioned.getFlow());
     assertEquals(1, flow.size());
@@ -39,6 +36,8 @@ public class UnionTest {
     assertEquals(flow, union.getFlow());
     assertEquals("Union1", union.getName());
     assertEquals(unioned, union.output());
+    // ~ output partitions: sum of the input partitions
+    assertEquals(5, union.output().getNumPartitions());
   }
 
   @Test

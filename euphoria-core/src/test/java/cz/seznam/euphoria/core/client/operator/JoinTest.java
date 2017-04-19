@@ -58,7 +58,7 @@ public class JoinTest {
 
     // default partitioning used
     assertTrue(join.getPartitioning().hasDefaultPartitioner());
-    assertEquals(3, join.getPartitioning().getNumPartitions());
+    assertEquals(5, join.getPartitioning().getNumPartitions());
   }
 
   @Test

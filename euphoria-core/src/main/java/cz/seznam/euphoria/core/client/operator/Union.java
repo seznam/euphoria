@@ -18,6 +18,7 @@ package cz.seznam.euphoria.core.client.operator;
 import cz.seznam.euphoria.core.annotation.operator.Basic;
 import cz.seznam.euphoria.core.annotation.operator.StateComplexity;
 import cz.seznam.euphoria.core.client.dataset.Dataset;
+import cz.seznam.euphoria.core.client.dataset.Datasets;
 import cz.seznam.euphoria.core.client.flow.Flow;
 
 import java.util.Arrays;
@@ -25,7 +26,10 @@ import java.util.Collection;
 import java.util.Objects;
 
 /**
- * Union of two datasets of same type.
+ * Union of two datasets of same type.<p>
+ *
+ * Unless explicitly specified, the number of output partitions is the sum
+ * of the number of partitions of both inputs.
  */
 @Basic(
     state = StateComplexity.ZERO,
@@ -54,6 +58,7 @@ public class Union<IN> extends Operator<IN, IN> implements OutputBuilder<IN> {
     private final String name;
     private final Dataset<IN> left;
     private final Dataset<IN> right;
+
     OutputBuilder(String name, Dataset<IN> left, Dataset<IN> right) {
       this.name = Objects.requireNonNull(name);
       this.left = Objects.requireNonNull(left);
@@ -90,7 +95,7 @@ public class Union<IN> extends Operator<IN, IN> implements OutputBuilder<IN> {
     if (left.getFlow() != right.getFlow()) {
       throw new IllegalArgumentException("Pass two datasets from the same flow.");
     }
-    this.output = createOutput(left);
+    this.output = Datasets.createOutputForBinaryInput(flow, left, right, this);
   }
 
   @Override

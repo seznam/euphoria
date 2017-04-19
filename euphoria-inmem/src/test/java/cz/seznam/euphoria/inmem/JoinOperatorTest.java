@@ -92,6 +92,7 @@ public class JoinOperatorTest {
         .using((l, r, c) ->
             c.collect((l == null ? 0 : l.getSecond()) + (r == null ? 0 : r.getSecond())))
         .applyIf(outer, b -> b.outer())
+        .setNumPartitions(1)
         .windowBy(windowing)
         .output();
 

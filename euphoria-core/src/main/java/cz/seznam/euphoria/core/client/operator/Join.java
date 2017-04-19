@@ -18,6 +18,7 @@ package cz.seznam.euphoria.core.client.operator;
 import cz.seznam.euphoria.core.annotation.operator.Recommended;
 import cz.seznam.euphoria.core.annotation.operator.StateComplexity;
 import cz.seznam.euphoria.core.client.dataset.Dataset;
+import cz.seznam.euphoria.core.client.dataset.Datasets;
 import cz.seznam.euphoria.core.client.dataset.partitioning.Partitioning;
 import cz.seznam.euphoria.core.client.dataset.windowing.Window;
 import cz.seznam.euphoria.core.client.dataset.windowing.Windowing;
@@ -39,11 +40,14 @@ import java.util.Collection;
 import java.util.Objects;
 
 /**
- * Join two datasets by given key producing single new dataset.
+ * Join two datasets by given key producing single new dataset.<p>
+ *
+ * Unless explicitly specified, the number of output partitions
+ * defaults to the sum of the number of partitions of both inputs.
  */
 @Recommended(
     reason =
-        "Might be useful to override because of performance reasons in a "
+        "Might be useful to override because of performance reasons for "
       + "specific join types (e.g. sort join), which might reduce the space "
       + "complexity",
     state = StateComplexity.LINEAR,
@@ -142,11 +146,13 @@ public class Join<LEFT, RIGHT, KEY, OUT, W extends Window>
       
       // define default partitioning
       super(new DefaultPartitioning<>(
-          Math.max(left.getNumPartitions(), right.getNumPartitions())));
+          Datasets.combinedNumPartitions(
+              Objects.requireNonNull(left),
+              Objects.requireNonNull(right))));
 
       this.name = Objects.requireNonNull(name);
-      this.left = Objects.requireNonNull(left);
-      this.right = Objects.requireNonNull(right);
+      this.left = left;
+      this.right = right;
       this.leftKeyExtractor = Objects.requireNonNull(leftKeyExtractor);
       this.rightKeyExtractor = Objects.requireNonNull(rightKeyExtractor);
       this.joinFunc = Objects.requireNonNull(joinFunc);

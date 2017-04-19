@@ -24,7 +24,7 @@ import javax.annotation.Nullable;
 import java.util.Collection;
 
 /**
- * {@code PCollection} that is input of a {@code Flow}.
+ * {@code Dataset} representing raw input of a {@code Flow}.
  */
 abstract class InputDataset<T> implements Dataset<T> {
 
@@ -52,8 +52,7 @@ abstract class InputDataset<T> implements Dataset<T> {
 
   @Override
   public void persist(DataSink<T> sink) {
-    throw new UnsupportedOperationException(
-        "The input dataset is already stored.");
+    throw new UnsupportedOperationException("The input dataset is already stored.");
   }
 
   @Override

@@ -18,6 +18,7 @@ package cz.seznam.euphoria.operator.test;
 import cz.seznam.euphoria.core.client.dataset.Dataset;
 import cz.seznam.euphoria.core.client.flow.Flow;
 import cz.seznam.euphoria.core.client.io.ListDataSource;
+import cz.seznam.euphoria.core.client.operator.MapElements;
 import cz.seznam.euphoria.core.client.operator.Repartition;
 import cz.seznam.euphoria.core.client.operator.Union;
 import cz.seznam.euphoria.operator.test.junit.AbstractOperatorTest;
@@ -25,8 +26,10 @@ import cz.seznam.euphoria.operator.test.junit.Processing;
 import org.junit.Test;
 
 import java.util.Arrays;
+import java.util.List;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 
 /**
  * Test for operator {@code Union}
@@ -67,4 +70,36 @@ public class UnionTest extends AbstractOperatorTest {
     });
   }
 
+  @Test
+  public void testUnionOutputPartitions() {
+    execute(new TestCase<Integer>() {
+      @Override
+      public int getNumOutputPartitions() {
+        return 3;
+      }
+
+      @Override
+      public Dataset<Integer> getOutput(Flow flow, boolean bounded) {
+        Dataset<Integer> first = flow.createInput(ListDataSource.of(bounded,
+            Arrays.asList(1)));
+
+        Dataset<Integer> second = flow.createInput(ListDataSource.of(bounded,
+            Arrays.asList(2, 3),
+            Arrays.asList(4, 5, 6)));
+
+        Dataset<Integer> combined = Union.of(first, second).output();
+        return MapElements.of(combined).using(e -> e).output();
+      }
+
+      @Override
+      public void validate(Partitions<Integer> partitions) {
+        List<List<Integer>> ps = partitions.getAll();
+        System.out.println(ps);
+        assertEquals(getNumOutputPartitions(), ps.size());
+        for (List<Integer> p : ps) {
+          assertFalse(p.isEmpty());
+        }
+      }
+    });
+  }
 }
