@@ -53,17 +53,20 @@ public final class GlobalWindowing<T>
     }
 
     @Override
-    public int compareTo(Window o) {
+    public int compareTo(GlobalWindowing.Window o) {
       return 0;
     }
   } // ~ end of Label
 
   private final static GlobalWindowing<?> INSTANCE = new GlobalWindowing<>();
+  private final static Iterable<Window> INSTANCE_ITER =
+      Collections.singleton(Window.INSTANCE);
+
   private GlobalWindowing() {}
 
   @Override
   public Iterable<Window> assignWindowsToElement(WindowedElement<?, T> el) {
-    return Collections.singleton(Window.INSTANCE);
+    return INSTANCE_ITER;
   }
 
   @Override

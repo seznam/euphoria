@@ -18,6 +18,7 @@ package cz.seznam.euphoria.inmem;
 import cz.seznam.euphoria.core.client.dataset.partitioning.Partitioning;
 import cz.seznam.euphoria.core.client.dataset.windowing.GlobalWindowing;
 import cz.seznam.euphoria.core.client.dataset.windowing.MergingWindowing;
+import cz.seznam.euphoria.core.client.dataset.windowing.Window;
 import cz.seznam.euphoria.core.client.dataset.windowing.Windowing;
 import cz.seznam.euphoria.core.client.flow.Flow;
 import cz.seznam.euphoria.core.client.functional.UnaryFunction;
@@ -711,7 +712,7 @@ public class InMemExecutor implements Executor {
                   (oldVal, newVal) -> oldVal < newVal ? newVal : oldVal);
               // determine partition
               Object key = keyExtractor.apply(datum.getElement());
-              final Iterable<cz.seznam.euphoria.core.client.dataset.windowing.Window> targetWindows;
+              final Iterable<Window> targetWindows;
               int windowShift = 0;
               if (allowWindowBasedShuffling) {
                 if (windowing.isPresent()) {
