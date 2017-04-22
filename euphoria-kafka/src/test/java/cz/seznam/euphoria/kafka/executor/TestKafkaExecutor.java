@@ -16,6 +16,10 @@
 
 package cz.seznam.euphoria.kafka.executor;
 
+import cz.seznam.euphoria.core.client.dataset.Dataset;
+import cz.seznam.euphoria.core.client.flow.Flow;
+import cz.seznam.euphoria.core.client.graph.DAG;
+import cz.seznam.euphoria.core.client.operator.Operator;
 import cz.seznam.euphoria.core.client.util.Pair;
 import java.util.HashMap;
 import java.util.List;
@@ -40,38 +44,65 @@ class TestKafkaExecutor extends KafkaExecutor {
 
   @Override
   ObservableStream<KafkaStreamElement> kafkaObservableStream(
-      String topic,
-      Function<byte[], Object> deserializer) {
+      Flow flow,
+      Dataset<?> input,
+      Function<byte[], KafkaStreamElement> deserializer) {
 
+    String topic = topicGenerator.apply(flow, input);
     return Objects.requireNonNull(
         topicQueues.get(topic),
         "Cannot find stream  " + topic);
   }
 
   @Override
-  OutputWriter outputWriter(String topic, int parallelism) {
+  OutputWriter outputWriter(Flow flow, Dataset<?> output) {
     List<Pair<BlockingQueue<KafkaStreamElement>, Integer>> queues;
-    queues = createOutputQueues(parallelism);
+    queues = createOutputQueues(output.getNumPartitions());
+    String topic = topicGenerator.apply(flow, output);
     topicQueues.put(
         topic,
         BlockingQueueObservableStream.wrap(getExecutor(), topic, queues));
     
-    return (elem, source, target, callback) -> {
-      try {
-        queues.get(target).getFirst().put(new KafkaStreamElement(
-            elem.getElement(),
-            elem.getWindow(),
-            elem.getTimestamp(),
-            elem.type,
-            source));
-        callback.apply(true, null);
-      } catch (InterruptedException ex) {
-        Thread.currentThread().interrupt();
-        callback.apply(false, ex);
-      } catch (Exception ex) {
-        callback.apply(false, ex);
+    return new OutputWriter() {
+
+      @Override
+      public int numPartitions() {
+        return output.getNumPartitions();
       }
+      
+      @Override
+      public void write(
+          KafkaStreamElement elem, int source, int target, Callback callback) {
+        try {
+          queues.get(target).getFirst().put(new KafkaStreamElement(
+              elem.getElement(),
+              elem.getWindow(),
+              elem.getTimestamp(),
+              elem.type,
+              source));
+          callback.apply(true, null);
+        } catch (InterruptedException ex) {
+          Thread.currentThread().interrupt();
+          callback.apply(false, ex);
+        } catch (Exception ex) {
+          callback.apply(false, ex);
+        }
+      }
+
+      @Override
+      public void close() {
+        
+      }
+
     };
+    
   }
+
+  @Override
+  void validateTopics(Flow flow, DAG<Operator<?, ?>> dag) {
+    // nop
+  }
+
+
 
 }

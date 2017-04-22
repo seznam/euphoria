@@ -16,10 +16,14 @@
 
 package cz.seznam.euphoria.kafka.executor;
 
+import com.esotericsoftware.kryo.Kryo;
+import com.esotericsoftware.kryo.io.Input;
+import com.esotericsoftware.kryo.io.Output;
+import cz.seznam.euphoria.core.annotation.Experimental;
 import cz.seznam.euphoria.core.client.dataset.Dataset;
 import cz.seznam.euphoria.core.client.dataset.partitioning.Partitioner;
 import cz.seznam.euphoria.core.client.dataset.partitioning.Partitioning;
-import cz.seznam.euphoria.core.client.dataset.windowing.Batch;
+import cz.seznam.euphoria.core.client.dataset.windowing.GlobalWindowing;
 import cz.seznam.euphoria.core.client.dataset.windowing.Windowing;
 import cz.seznam.euphoria.core.client.flow.Flow;
 import cz.seznam.euphoria.core.client.functional.UnaryFunction;
@@ -52,12 +56,15 @@ import cz.seznam.euphoria.inmem.operator.Collector;
 import cz.seznam.euphoria.inmem.operator.ReduceStateByKeyReducer;
 import cz.seznam.euphoria.inmem.operator.StreamElement;
 import cz.seznam.euphoria.shaded.guava.com.google.common.annotations.VisibleForTesting;
+import cz.seznam.euphoria.shaded.guava.com.google.common.base.Joiner;
 import cz.seznam.euphoria.shaded.guava.com.google.common.collect.Iterables;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
@@ -66,16 +73,26 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import kafka.admin.AdminUtils;
+import kafka.utils.ZkUtils;
+import org.I0Itec.zkclient.ZkClient;
+import org.I0Itec.zkclient.ZkConnection;
 import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.serialization.Serdes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * An {@code Executor} passing data between pipelines via Apache Kafka topics.
  */
+@Experimental(
+    "Consider this class as experimental PoC. In the future it will be either "
+        + "removed or marked as stable.")
 public class KafkaExecutor implements Executor {
 
   private static final Logger LOG = LoggerFactory.getLogger(KafkaExecutor.class);
@@ -86,11 +103,22 @@ public class KafkaExecutor implements Executor {
   private final ExecutorService executor;
   private final String[] bootstrapServers;
   private final ExecutionContext context = new ExecutionContext();
+  private final Kryo kryo = new Kryo();
+  final BiFunction<Flow, Dataset<?>, String> topicGenerator;
 
 
   public KafkaExecutor(ExecutorService executor, String[] bootstrapServers) {
+    this(executor, bootstrapServers, KafkaExecutor::topicForDataset);
+  }
+
+  public KafkaExecutor(
+      ExecutorService executor,
+      String[] bootstrapServers,
+      BiFunction<Flow, Dataset<?>, String> topicGenerator) {
+
     this.executor = executor;
     this.bootstrapServers = bootstrapServers;
+    this.topicGenerator = topicGenerator;
   }
 
   @Override
@@ -100,11 +128,19 @@ public class KafkaExecutor implements Executor {
 
   @Override
   public void shutdown() {
-    executor.shutdownNow();
+    executor.shutdown();
   }
 
   private Result execute(Flow flow) {
     DAG<Operator<?, ?>> unfolded = FlowUnfolder.unfold(flow, getBasicOps());
+
+    try {
+      validateTopics(flow, unfolded);
+    } catch (Exception ex) {
+      LOG.error("Failed validation of flow {}", flow, ex);
+      return new Result();
+    }
+    
     int count = unfolded.size() + unfolded.getLeafs().size();
     CountDownLatch latch = new CountDownLatch(count);
     CountDownLatch finishLatch = new CountDownLatch(unfolded.getLeafs().size());
@@ -138,6 +174,27 @@ public class KafkaExecutor implements Executor {
   private Set<Class<? extends Operator<?, ?>>> getBasicOps() {
     // use the "standard" set of basic operators
     return Executor.getBasicOps();
+  }
+
+  // verify that all topics exist
+  @VisibleForTesting
+  void validateTopics(Flow flow, DAG<Operator<?, ?>> dag) {
+    ZkClient client = new ZkClient("localhost:2181");
+    try {
+      ZkConnection conn = new ZkConnection("localhost:2181");
+      ZkUtils utils = new ZkUtils(client, conn, true);
+      List<String> unknownTopics = dag.traverse()
+          .filter(n -> n.get() instanceof Repartition || n.get() instanceof ReduceStateByKey)
+          .map(n -> topicGenerator.apply(flow, n.getSingleParent().get().output()))
+          .filter(t -> !AdminUtils.topicExists(utils, t))
+          .collect(Collectors.toList());
+      if (!unknownTopics.isEmpty()) {
+        throw new IllegalArgumentException(
+            "Cannot run the flow. Missing topics " + unknownTopics);
+      }
+    } finally {
+      client.close();
+    }
   }
 
   @SuppressWarnings("unchecked")
@@ -220,7 +277,7 @@ public class KafkaExecutor implements Executor {
   }
 
   @VisibleForTesting
-  protected List<Pair<BlockingQueue<KafkaStreamElement>, Integer>> createOutputQueues(
+  List<Pair<BlockingQueue<KafkaStreamElement>, Integer>> createOutputQueues(
       int count) {
     List<Pair<BlockingQueue<KafkaStreamElement>, Integer>> ret = new ArrayList<>();
     for (int i = 0; i < count; i++) {
@@ -239,24 +296,24 @@ public class KafkaExecutor implements Executor {
     ObservableStream<KafkaStreamElement> stream = context.get(input);
     Partitioning<?> partitioning = op.getPartitioning();
 
-    String topic = nameForConsumerOf(op.output());
     Partitioner partitioner = partitioning.getPartitioner();
-    int numPartitions = numPartitions(
-        input.getNumPartitions(),
-        partitioning.getNumPartitions());
 
     final List<Pair<BlockingQueue<KafkaStreamElement>, Integer>> outputQueues;
     final BlockingQueueObservableStream<KafkaStreamElement> outputStream;
+    final OutputWriter writer = outputWriter(flow, op.output());
+    final int numPartitions = numPartitions(
+        writer.numPartitions(),
+        partitioning.getNumPartitions());
+
     outputQueues = createOutputQueues(numPartitions);
     outputStream = BlockingQueueObservableStream.wrap(
         executor, op.getName(), outputQueues);
 
-    String topicName = "__euphoria_" + flowName(flow) + "_" + op.getName();
-    OutputWriter writer = outputWriter(topicName, numPartitions);
+
     context.register(op.output(), outputStream);
 
     ObservableStream<KafkaStreamElement> repartitioned;
-    repartitioned = kafkaObservableStream(topicName, this::fromBytes);
+    repartitioned = kafkaObservableStream(flow, op.output(), this::fromBytes);
 
     CountDownLatch runningParts = new CountDownLatch(2);
 
@@ -271,8 +328,11 @@ public class KafkaExecutor implements Executor {
     repartitioned.observe(
         nameForConsumerOf(input) + "_receive",
         receivingObserver(
-            op, runningParts, latch, outputQueues, clock,
-            Optional.empty()));
+            op, runningParts,
+            latch, outputQueues,
+            clock,
+            Optional.empty(),
+            writer::close));
 
     awaitLatch(runningParts);
     LOG.info("Started both ends of repartition operator {}", op.getName());
@@ -295,7 +355,8 @@ public class KafkaExecutor implements Executor {
       CountDownLatch latch,
       List<Pair<BlockingQueue<KafkaStreamElement>, Integer>> outputQueues,
       VectorClock clock,
-      Optional<ExtractEventTime> eventTimeAssigner) {
+      Optional<ExtractEventTime> eventTimeAssigner,
+      Runnable onClose) {
 
     return new StreamObserver<KafkaStreamElement>() {
 
@@ -348,6 +409,7 @@ public class KafkaExecutor implements Executor {
         outputQueues.forEach(output -> {
           try {
             output.getFirst().put(KafkaStreamElement.FACTORY.endOfStream());
+            onClose.run();
           } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
           }
@@ -532,23 +594,23 @@ public class KafkaExecutor implements Executor {
     Partitioning partitioning = op.getPartitioning();
     Partitioner partitioner = partitioning.getPartitioner();
     ExtractEventTime eventTimeAssigner = op.getEventTimeAssigner();
-    int numPartitions = numPartitions(
-        input.getNumPartitions(),
-        partitioning.getNumPartitions());
     final List<Pair<BlockingQueue<KafkaStreamElement>, Integer>> outputs;
     final List<Pair<BlockingQueue<KafkaStreamElement>, Integer>> repartitions;
 
     BlockingQueueObservableStream<KafkaStreamElement> repartitionStream;
     BlockingQueueObservableStream<KafkaStreamElement> outputStream;
-    String topicName = "__euphoria_" + flowName(flow) + "_" + op.getName();
-    OutputWriter repartitionWriter = outputWriter(topicName, numPartitions);
+    OutputWriter repartitionWriter = outputWriter(flow, op.output());
+    int numPartitions = numPartitions(
+        repartitionWriter.numPartitions(),
+        partitioning.getNumPartitions());
+
     ObservableStream<KafkaStreamElement> repartitioned;
     VectorClock clock = new VectorClock(input.getNumPartitions());
 
     outputs = createOutputQueues(numPartitions);
     repartitions = createOutputQueues(numPartitions);
     
-    repartitioned = kafkaObservableStream(topicName, this::fromBytes);
+    repartitioned = kafkaObservableStream(flow, op.output(), this::fromBytes);
     repartitionStream = BlockingQueueObservableStream.wrap(
         executor, op.getName(), repartitions);
     outputStream = BlockingQueueObservableStream.wrap(
@@ -559,14 +621,16 @@ public class KafkaExecutor implements Executor {
 
     stream.observe(
         nameForConsumerOf(input) + "_send",
-        sendingObserver(op, parts, latch, keyExtractor, partitioner,
+        sendingObserver(
+            op, parts, latch, keyExtractor, partitioner,
             numPartitions, repartitionWriter));
 
     repartitioned.observe(
         nameForConsumerOf(input) + "_process",
         receivingObserver(
             op, parts, latch, repartitions, clock,
-            Optional.ofNullable(eventTimeAssigner)));
+            Optional.ofNullable(eventTimeAssigner),
+            repartitionWriter::close));
 
 
     List<ReduceStateByKeyReducer> reducers = new ArrayList<>();
@@ -577,13 +641,15 @@ public class KafkaExecutor implements Executor {
           collector(output),
           keyExtractor,
           valueExtractor,
-          // FIXME
+          // FIXME: specify scheduler from client code
           op.input().isBounded()
               ? new NoopTriggerScheduler()
               : (windowing != null
                   ? new WatermarkTriggerScheduler(500)
                   : new WatermarkTriggerScheduler(500)),
+          // FIXME; specify watermark emit strategy
           new WatermarkEmitStrategy.Default(),
+          // FIXME: specify storage provider
           new InMemStorageProvider(),
           KafkaStreamElement.FACTORY);
 
@@ -649,9 +715,11 @@ public class KafkaExecutor implements Executor {
    */
   @VisibleForTesting
   ObservableStream<KafkaStreamElement> kafkaObservableStream(
-      String topic,
-      Function<byte[], Object> deserializer) {
-    
+      Flow flow,
+      Dataset<?> dataset,
+      Function<byte[], KafkaStreamElement> deserializer) {
+
+    String topic = topicGenerator.apply(flow, dataset);
     return new KafkaObservableStream(
         executor, bootstrapServers,
         topic, deserializer);
@@ -662,15 +730,36 @@ public class KafkaExecutor implements Executor {
    */
   @SuppressWarnings("unchecked")
   @VisibleForTesting
-  OutputWriter outputWriter(String topic, int parallelism) {
+  OutputWriter outputWriter(Flow flow, Dataset<?> output) {
     KafkaProducer<byte[], byte[]> producer = createProducer();
+    String topic = topicGenerator.apply(flow, output);
 
-    return (elem, source, target, callback) -> {
-      // FIXME: serialization
-      ProducerRecord<byte[], byte[]> record = new ProducerRecord<>(
-          topic, target, elem.getTimestamp(), String.valueOf(source).getBytes(),
-          toBytes(elem));
-      producer.send(record, (meta, exc) -> callback.apply(exc == null, exc));
+    return new OutputWriter() {
+
+      @Override
+      public int numPartitions() {
+        return producer.partitionsFor(topic).size();
+      }
+
+      @Override
+      public void write(
+          KafkaStreamElement elem, int source, int target, Callback callback) {
+        try {
+          // FIXME: serialization
+          ProducerRecord<byte[], byte[]> record = new ProducerRecord<>(
+              topic, target, elem.getTimestamp(), String.valueOf(source).getBytes(),
+              toBytes(elem));
+          producer.send(record, (meta, exc) -> callback.apply(exc == null, exc));
+        } catch (Exception ex) {
+          LOG.error("Failed to send {}", elem, ex);
+        }
+      }
+
+      @Override
+      public void close() {
+        producer.close();
+      }
+
     };
   }
 
@@ -813,7 +902,7 @@ public class KafkaExecutor implements Executor {
             Object next = reader.next();
             output.put(KafkaStreamElement.FACTORY.data(
                 next,
-                Batch.BatchWindow.get(),
+                GlobalWindowing.Window.get(),
                 System.currentTimeMillis()));
           }
         } catch (IOException ex) {
@@ -840,7 +929,7 @@ public class KafkaExecutor implements Executor {
 
   private void awaitLatch(CountDownLatch latch) {
     try {
-      if (!latch.await(10, TimeUnit.SECONDS)) {
+      if (!latch.await(60, TimeUnit.SECONDS)) {
         throw new RuntimeException(
             "Timeout waiting for the operators to start up.");
       }
@@ -869,17 +958,29 @@ public class KafkaExecutor implements Executor {
   }
 
   private KafkaProducer<byte[], byte[]> createProducer() {
-    throw new UnsupportedOperationException("Not supported yet.");
+    Properties props = new Properties();
+    props.put(
+        ProducerConfig.BOOTSTRAP_SERVERS_CONFIG,
+        Joiner.on(",").join(bootstrapServers));
+    return new KafkaProducer<>(
+        props,
+        Serdes.ByteArray().serializer(),
+        Serdes.ByteArray().serializer());
   }
 
   private byte[] toBytes(KafkaStreamElement elem) {
     // FIXME: serialization
-    return null;
+    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+    Output output = new Output(baos);
+    kryo.writeObject(output, elem);
+    output.close();
+    return baos.toByteArray();
   }
 
   private KafkaStreamElement fromBytes(byte[] bytes) {
-    // FIXME: serialization
-    return null;
+    // FIXME: serialization   
+    Input input = new Input(bytes);
+    return kryo.readObject(input, KafkaStreamElement.class);
   }
 
   protected java.util.concurrent.Executor getExecutor() {
@@ -887,7 +988,16 @@ public class KafkaExecutor implements Executor {
   }
 
   private int numPartitions(int input, int partitioning) {
-    return partitioning > 0 ? partitioning : input;
+    return partitioning > 0 ? Math.min(input, partitioning) : input;
+  }
+
+  // retrieve topic that the given dataset should be stored into
+  private static String topicForDataset(Flow flow, Dataset<?> dataset) {
+    return "__euphoria_"
+        + flow.getName() + "_"
+        + Optional.ofNullable(dataset.getProducer())
+            .map(op -> op.getName())
+            .orElse("_input_" + dataset.getSource());
   }
 
 }

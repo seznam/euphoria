@@ -47,7 +47,7 @@ class KafkaStreamElement implements StreamElement<Object> {
 
     @Override
     public KafkaStreamElement endOfStream() {
-      return new KafkaStreamElement(null, null, -1, Type.EOS);
+      return new KafkaStreamElement(null, null, Long.MAX_VALUE, Type.EOS);
     }
 
   }
@@ -59,17 +59,29 @@ class KafkaStreamElement implements StreamElement<Object> {
     EOS
   }
 
+
+  @Nullable Object element;
+  @Nullable Window window;
+  int sourcePartition;  
+  Type type;
+  long stamp;
+  
+  // FIXME: serialization
+  KafkaStreamElement() {
+    
+  }
+
   KafkaStreamElement(
       @Nullable Object element,
       @Nullable Window window,
       long stamp,
       Type type,
       int sourcePartition) {
-    
+
     this.element = element;
     this.window = window;
     this.stamp = stamp;
-    this.type = type;       
+    this.type = type;
     this.sourcePartition = sourcePartition;
   }
 
@@ -78,15 +90,10 @@ class KafkaStreamElement implements StreamElement<Object> {
       @Nullable Window window,
       long stamp,
       Type type) {
-    
+
     this(element, window, stamp, type, -1);
   }
 
-  @Nullable final Object element;
-  @Nullable final Window window;
-  final int sourcePartition;  
-  final Type type;
-  long stamp;
 
   @Override
   public boolean isElement() {

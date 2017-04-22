@@ -20,8 +20,13 @@ package cz.seznam.euphoria.kafka.executor;
  * Interface for writing output to kafka.
  * This interface is provided for the sake of unit testing.
  */
-@FunctionalInterface
-interface OutputWriter {
+interface OutputWriter extends AutoCloseable {
+
+  /**
+   * Retrieve number of output partitions available.
+   * @return the number of partitions available
+   */
+  int numPartitions();
 
   /**
    * Write element to output.
@@ -36,5 +41,11 @@ interface OutputWriter {
       int sourcePartition,
       int targetPartition,
       Callback callback);
+
+  /**
+   * Close the writer.
+   */
+  @Override
+  void close();
   
 }

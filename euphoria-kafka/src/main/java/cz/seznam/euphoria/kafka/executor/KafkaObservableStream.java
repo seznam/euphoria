@@ -34,6 +34,8 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.Serdes;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A stream stored in Apache Kafka topic.
@@ -41,17 +43,19 @@ import org.apache.kafka.common.serialization.Serdes;
 public class KafkaObservableStream
     implements ObservableStream<KafkaStreamElement> {
 
+  private static final Logger LOG = LoggerFactory.getLogger(KafkaObservableStream.class);
+
   private final String topic;
   private final Executor executor;
   private final String[] bootstrapServers;
-  private final Function<byte[], Object> deserializer;
+  private final Function<byte[], KafkaStreamElement> deserializer;
   private final AtomicReference<List<Integer>> assignedPartitions;
 
-  public KafkaObservableStream(
+  KafkaObservableStream(
       Executor executor,
       String[] bootstrapServers,
       String topic,
-      Function<byte[], Object> deserializer) {
+      Function<byte[], KafkaStreamElement> deserializer) {
 
     this.topic = topic;
     this.executor = executor;
@@ -61,24 +65,30 @@ public class KafkaObservableStream
   }
 
   @Override
-  public void observe(String name, StreamObserver<KafkaStreamElement> observer) {
+  public void observe(
+      String name, StreamObserver<KafkaStreamElement> observer) {
+    
     executor.execute(() -> {
-      KafkaConsumer<byte[], byte[]> consumer;
-
-      consumer = createConsumer(name, bootstrapServers, topic);
-      observer.onRegistered();
+      KafkaConsumer<byte[], byte[]> consumer = createConsumer(
+          name, bootstrapServers, topic);
+      boolean first = true;
       try {
         boolean finished = false;
         Set<Integer> finishedPartitions = new HashSet<>();
         while (!finished && !Thread.currentThread().isInterrupted()) {
           ConsumerRecords<byte[], byte[]> polled = consumer.poll(100);
+          if (first) {
+            LOG.info("Started to consume topic {}", topic);
+            observer.onRegistered();
+            first = false;
+          }
           for (ConsumerRecord<byte[], byte[]> r : polled) {
-            if (r.value() != null) {
-              // FIXME: window serialization
-              Object elem = deserializer.apply(r.value());
+            // FIXME: window serialization
+            KafkaStreamElement elem = deserializer.apply(r.value());
+            if (!elem.isEndOfStream()) {
               observer.onNext(
                   r.partition(),
-                  KafkaStreamElement.FACTORY.data(elem, null, r.timestamp()));
+                  elem);
             } else {
               finishedPartitions.add(r.partition());
               if (finishedPartitions.size() == assignedPartitions.get().size()) {
@@ -90,8 +100,10 @@ public class KafkaObservableStream
         }
         observer.onCompleted();
       } catch (Throwable thrwbl) {
+        LOG.error("Error reading stream {}", name, thrwbl);
         observer.onError(thrwbl);
       }
+      consumer.close();
     });
   }
 

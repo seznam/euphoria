@@ -21,6 +21,7 @@ import cz.seznam.euphoria.inmem.operator.StreamElement;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executor;
@@ -57,6 +58,7 @@ public class BlockingQueueObservableStream<T extends StreamElement<?>>
   final Executor executor;
   final String operator;
   final List<Pair<BlockingQueue<T>, Integer>> queues;
+  final int numOutputQueues;
   
   final Set<String> observerNames = new HashSet<>();
   final List<StreamObserver<T>> observers = new ArrayList<>();
@@ -71,7 +73,12 @@ public class BlockingQueueObservableStream<T extends StreamElement<?>>
 
     this.executor = executor;
     this.operator = operator;
-    this.queues = queues;
+    this.queues = Objects.requireNonNull(queues);
+    this.numOutputQueues = queues.size();
+    if (numOutputQueues == 0) {
+      throw new IllegalArgumentException(
+          "List of outbound queues cannot be zero-length.");
+    }
     for (Pair<BlockingQueue<T>, Integer> q : queues) {
       executor.execute(() -> {
         forwardQueue(q.getFirst(), q.getSecond());
@@ -100,11 +107,6 @@ public class BlockingQueueObservableStream<T extends StreamElement<?>>
         T elem = queue.take();
         if (!elem.isEndOfStream()) {
           synchronized (observers) {
-            if (observers.isEmpty()) {
-              throw new RuntimeException(
-                  "No observers registered for element "
-                      + elem + " in queue of operator " + operator);
-            }
             observers.forEach(o -> {
               synchronized (o) {
                 o.onNext(partitionId, elem);
@@ -124,16 +126,20 @@ public class BlockingQueueObservableStream<T extends StreamElement<?>>
         return;
       }
     }
-    if (finished.incrementAndGet() == queues.size()) {
+    if (finished.incrementAndGet() == numOutputQueues) {
       synchronized (observers) {
-        observers.forEach(o -> o.onCompleted());
+        try {
+          observers.forEach(o -> o.onCompleted());
+        } catch (Exception ex) {
+          ex.printStackTrace();
+        }
       }
     }
   }
 
   @Override
   public int size() {
-    return queues.size();
+    return numOutputQueues;
   }
 
 }
