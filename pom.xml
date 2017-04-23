@@ -310,10 +310,13 @@
             </executions>
           </plugin>
 
-          <!-- generate and attache javadoc jar -->
+          <!-- generate and attach javadoc jar -->
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-javadoc-plugin</artifactId>
+            <configuration>
+              <excludePackageNames>cz.seznam.euphoria.*.proto.*</excludePackageNames>
+            </configuration>
             <executions>
               <execution>
                 <id>attach-javadocs</id>

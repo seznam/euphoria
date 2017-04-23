@@ -1,11 +1,11 @@
-/*
- * Copyright 2016-2017 Seznam.cz, a.s..
+/**
+ * Copyright 2016-2017 Seznam.cz, a.s.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package cz.seznam.euphoria.kafka.executor.io;
 
 import cz.seznam.euphoria.core.client.dataset.windowing.Window;
@@ -25,6 +26,8 @@ public class TopicSpec<W extends Window, T> {
 
   /**
    * Create new topic specification.
+   * @param <W> type of the window
+   * @param <T> the data payload type
    * @param name name of the topic
    * @param windowSerialization serialization to use to serialize window of
    * an element
@@ -37,7 +40,7 @@ public class TopicSpec<W extends Window, T> {
       Serde<W> windowSerialization,
       Serde<T> payloadSerialization) {
     
-    return new TopicSpec(name, windowSerialization, payloadSerialization);
+    return new TopicSpec<>(name, windowSerialization, payloadSerialization);
   }
 
   private final String name;
@@ -52,8 +55,7 @@ public class TopicSpec<W extends Window, T> {
 
   /**
    * Retrieve name of the topic.
-   * @returns name of the topic
-   * @return
+   * @return name of the topic
    */
   public String getName() {
     return name;

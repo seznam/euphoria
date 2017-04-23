@@ -58,6 +58,7 @@ public class KafkaObservableStream
   private final Deserializer<Object> payloadDeserializer;
   private final AtomicReference<List<Integer>> assignedPartitions;
 
+  @SuppressWarnings("unchecked")
   KafkaObservableStream(
       Executor executor,
       String[] bootstrapServers,
