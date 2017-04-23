@@ -16,16 +16,22 @@
 
 package cz.seznam.euphoria.kafka.executor;
 
+import com.google.protobuf.InvalidProtocolBufferException;
+import com.google.protobuf.TextFormat;
+import cz.seznam.euphoria.core.client.dataset.windowing.Window;
+import cz.seznam.euphoria.kafka.executor.io.Serde.Deserializer;
+import cz.seznam.euphoria.kafka.executor.io.TopicSpec;
+import cz.seznam.euphoria.kafka.executor.proto.Serialization;
 import cz.seznam.euphoria.shaded.guava.com.google.common.base.Joiner;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
@@ -48,19 +54,20 @@ public class KafkaObservableStream
   private final String topic;
   private final Executor executor;
   private final String[] bootstrapServers;
-  private final Function<byte[], KafkaStreamElement> deserializer;
+  private final Deserializer<Window> windowDeserializer;
+  private final Deserializer<Object> payloadDeserializer;
   private final AtomicReference<List<Integer>> assignedPartitions;
 
   KafkaObservableStream(
       Executor executor,
       String[] bootstrapServers,
-      String topic,
-      Function<byte[], KafkaStreamElement> deserializer) {
+      TopicSpec spec) {
 
-    this.topic = topic;
+    this.topic = spec.getName();
     this.executor = executor;
     this.bootstrapServers = bootstrapServers;
-    this.deserializer = deserializer;
+    this.windowDeserializer = spec.getWindowSerialization().deserializer();
+    this.payloadDeserializer = spec.getPayloadSerialization().deserializer();
     this.assignedPartitions = new AtomicReference<>();
   }
 
@@ -83,18 +90,26 @@ public class KafkaObservableStream
             first = false;
           }
           for (ConsumerRecord<byte[], byte[]> r : polled) {
-            // FIXME: window serialization
-            KafkaStreamElement elem = deserializer.apply(r.value());
-            if (!elem.isEndOfStream()) {
-              observer.onNext(
-                  r.partition(),
-                  elem);
-            } else {
-              finishedPartitions.add(r.partition());
-              if (finishedPartitions.size() == assignedPartitions.get().size()) {
-                finished = true;
+            Optional<KafkaStreamElement> parsed = deserialize(r.timestamp(), r.value());
+            if (parsed.isPresent()) {
+              KafkaStreamElement elem = parsed.get();
+              if (!elem.isEndOfStream()) {
+                observer.onNext(
+                    r.partition(),
+                    elem);
+              } else {
+                finishedPartitions.add(r.partition());
+                if (finishedPartitions.size() == assignedPartitions.get().size()) {
+                  finished = true;
+                }
               }
-            }
+            }            
+          }
+          if (!polled.isEmpty()) {
+            // FIXME: this doesn't have exactly once-semantics
+            // need to start working with the state checkpointing
+            // and CHECKPOINT and RESET_TO_CHECKPOINT messages
+            // sent across the whole computation
             consumer.commitAsync();
           }
         }
@@ -149,6 +164,34 @@ public class KafkaObservableStream
       }
 
     };
+  }
+
+  private Optional<KafkaStreamElement> deserialize(long timestamp, byte[] value) {
+    try {
+      Serialization.Element parsed = Serialization.Element.parseFrom(value);
+      switch (parsed.getType()) {
+        case ELEMENT:
+          return Optional.of(KafkaStreamElement.FACTORY.data(
+              payloadDeserializer.apply(parsed.getPayload().toByteArray()),
+              windowDeserializer.apply(parsed.getWindow().toByteArray()),
+              timestamp));
+        case END_OF_STREAM:
+          return Optional.of(KafkaStreamElement.FACTORY.endOfStream());
+        case WATERMARK:
+          return Optional.of(KafkaStreamElement.FACTORY.watermark(timestamp));
+        case WINDOW_TRIGGER:
+          return Optional.of(KafkaStreamElement.FACTORY.windowTrigger(
+              windowDeserializer.apply(parsed.getWindow().toByteArray()),
+              timestamp));
+        default:
+          LOG.warn(
+              "Unknown streaming element {}",
+              TextFormat.shortDebugString(parsed));
+      }
+    } catch (InvalidProtocolBufferException ex) {
+      LOG.warn("Cannot deserialize input data", ex);
+    }
+    return Optional.empty();
   }
 
 }

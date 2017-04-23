@@ -32,4 +32,5 @@ public abstract class Window<T extends Window<T>> implements Serializable, Compa
 
   @Override
   public abstract boolean equals(Object obj);
+  
 }

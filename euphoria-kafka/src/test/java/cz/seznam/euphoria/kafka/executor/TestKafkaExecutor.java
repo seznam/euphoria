@@ -21,13 +21,14 @@ import cz.seznam.euphoria.core.client.flow.Flow;
 import cz.seznam.euphoria.core.client.graph.DAG;
 import cz.seznam.euphoria.core.client.operator.Operator;
 import cz.seznam.euphoria.core.client.util.Pair;
+import cz.seznam.euphoria.kafka.executor.io.Serde;
+import cz.seznam.euphoria.kafka.executor.io.TopicSpec;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.function.Function;
 
 /**
  * A {@code KafkaExecutor} that actually doesn't use kafka, but uses
@@ -39,16 +40,17 @@ class TestKafkaExecutor extends KafkaExecutor {
   final Map<String, ObservableStream<KafkaStreamElement>> topicQueues = new HashMap<>();
 
   TestKafkaExecutor(ExecutorService executor) {
-    super(executor, new String[] { });
+    super(executor, new String[] { },
+        (flow, dataset) ->
+            TopicSpec.of("topic", Serde.from(null, null), Serde.from(null, null)));
   }
 
   @Override
   ObservableStream<KafkaStreamElement> kafkaObservableStream(
       Flow flow,
-      Dataset<?> input,
-      Function<byte[], KafkaStreamElement> deserializer) {
+      Dataset<?> input) {
 
-    String topic = topicGenerator.apply(flow, input);
+    String topic = topicGenerator.apply(flow, input).getName();
     return Objects.requireNonNull(
         topicQueues.get(topic),
         "Cannot find stream  " + topic);
@@ -58,7 +60,7 @@ class TestKafkaExecutor extends KafkaExecutor {
   OutputWriter outputWriter(Flow flow, Dataset<?> output) {
     List<Pair<BlockingQueue<KafkaStreamElement>, Integer>> queues;
     queues = createOutputQueues(output.getNumPartitions());
-    String topic = topicGenerator.apply(flow, output);
+    String topic = topicGenerator.apply(flow, output).getName();
     topicQueues.put(
         topic,
         BlockingQueueObservableStream.wrap(getExecutor(), topic, queues));

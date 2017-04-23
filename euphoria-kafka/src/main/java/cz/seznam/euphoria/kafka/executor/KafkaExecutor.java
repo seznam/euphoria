@@ -16,21 +16,19 @@
 
 package cz.seznam.euphoria.kafka.executor;
 
-import com.esotericsoftware.kryo.Kryo;
-import com.esotericsoftware.kryo.io.Input;
-import com.esotericsoftware.kryo.io.Output;
+import com.google.protobuf.ByteString;
 import cz.seznam.euphoria.core.annotation.Experimental;
 import cz.seznam.euphoria.core.client.dataset.Dataset;
 import cz.seznam.euphoria.core.client.dataset.partitioning.Partitioner;
 import cz.seznam.euphoria.core.client.dataset.partitioning.Partitioning;
 import cz.seznam.euphoria.core.client.dataset.windowing.GlobalWindowing;
+import cz.seznam.euphoria.core.client.dataset.windowing.Window;
 import cz.seznam.euphoria.core.client.dataset.windowing.Windowing;
 import cz.seznam.euphoria.core.client.flow.Flow;
 import cz.seznam.euphoria.core.client.functional.UnaryFunction;
 import cz.seznam.euphoria.core.client.functional.UnaryFunctor;
 import cz.seznam.euphoria.core.client.graph.DAG;
 import cz.seznam.euphoria.core.client.graph.Node;
-import cz.seznam.euphoria.core.client.io.Context;
 import cz.seznam.euphoria.core.client.io.DataSink;
 import cz.seznam.euphoria.core.client.io.DataSource;
 import cz.seznam.euphoria.core.client.io.Partition;
@@ -55,10 +53,12 @@ import cz.seznam.euphoria.inmem.WatermarkTriggerScheduler;
 import cz.seznam.euphoria.inmem.operator.Collector;
 import cz.seznam.euphoria.inmem.operator.ReduceStateByKeyReducer;
 import cz.seznam.euphoria.inmem.operator.StreamElement;
+import cz.seznam.euphoria.kafka.executor.io.Serde.Serializer;
+import cz.seznam.euphoria.kafka.executor.io.TopicSpec;
+import cz.seznam.euphoria.kafka.executor.proto.Serialization;
 import cz.seznam.euphoria.shaded.guava.com.google.common.annotations.VisibleForTesting;
 import cz.seznam.euphoria.shaded.guava.com.google.common.base.Joiner;
 import cz.seznam.euphoria.shaded.guava.com.google.common.collect.Iterables;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -73,8 +73,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import kafka.admin.AdminUtils;
 import kafka.utils.ZkUtils;
@@ -103,18 +103,13 @@ public class KafkaExecutor implements Executor {
   private final ExecutorService executor;
   private final String[] bootstrapServers;
   private final ExecutionContext context = new ExecutionContext();
-  private final Kryo kryo = new Kryo();
-  final BiFunction<Flow, Dataset<?>, String> topicGenerator;
+  final BiFunction<Flow, Dataset<?>, TopicSpec<? extends Window, ?>> topicGenerator;
 
-
-  public KafkaExecutor(ExecutorService executor, String[] bootstrapServers) {
-    this(executor, bootstrapServers, KafkaExecutor::topicForDataset);
-  }
 
   public KafkaExecutor(
       ExecutorService executor,
       String[] bootstrapServers,
-      BiFunction<Flow, Dataset<?>, String> topicGenerator) {
+      BiFunction<Flow, Dataset<?>, TopicSpec<? extends Window, ?>> topicGenerator) {
 
     this.executor = executor;
     this.bootstrapServers = bootstrapServers;
@@ -185,7 +180,7 @@ public class KafkaExecutor implements Executor {
       ZkUtils utils = new ZkUtils(client, conn, true);
       List<String> unknownTopics = dag.traverse()
           .filter(n -> n.get() instanceof Repartition || n.get() instanceof ReduceStateByKey)
-          .map(n -> topicGenerator.apply(flow, n.getSingleParent().get().output()))
+          .map(n -> topicGenerator.apply(flow, n.getSingleParent().get().output()).getName())
           .filter(t -> !AdminUtils.topicExists(utils, t))
           .collect(Collectors.toList());
       if (!unknownTopics.isEmpty()) {
@@ -240,6 +235,11 @@ public class KafkaExecutor implements Executor {
 
     stream.observe(nameForConsumerOf(input), new StreamObserver<KafkaStreamElement>() {
 
+      final List<MapContext> contexts = outputs.stream()
+          .map(Pair::getFirst)
+          .map(MapContext::new)
+          .collect(Collectors.toList());
+
       @Override
       public void onRegistered() {
         registerOperator(op, latch);
@@ -249,7 +249,8 @@ public class KafkaExecutor implements Executor {
       public void onNext(int partitionId, KafkaStreamElement elem) {
         BlockingQueue<KafkaStreamElement> output = outputs.get(partitionId).getFirst();
         if (elem.isElement()) {
-          Context<Object> context = mapContext(elem, output);
+          MapContext context = contexts.get(partitionId);
+          context.setInput(elem);
           functor.apply(elem.getElement(), context);
         } else {
           try {
@@ -313,7 +314,7 @@ public class KafkaExecutor implements Executor {
     context.register(op.output(), outputStream);
 
     ObservableStream<KafkaStreamElement> repartitioned;
-    repartitioned = kafkaObservableStream(flow, op.output(), this::fromBytes);
+    repartitioned = kafkaObservableStream(flow, op.output());
 
     CountDownLatch runningParts = new CountDownLatch(2);
 
@@ -332,6 +333,7 @@ public class KafkaExecutor implements Executor {
             latch, outputQueues,
             clock,
             Optional.empty(),
+            new WatermarkEmitStrategy.Default(),
             writer::close));
 
     awaitLatch(runningParts);
@@ -356,13 +358,27 @@ public class KafkaExecutor implements Executor {
       List<Pair<BlockingQueue<KafkaStreamElement>, Integer>> outputQueues,
       VectorClock clock,
       Optional<ExtractEventTime> eventTimeAssigner,
+      WatermarkEmitStrategy emitStrategy,
       Runnable onClose) {
 
     return new StreamObserver<KafkaStreamElement>() {
 
+      AtomicLong watermark = new AtomicLong(0);
+
       @Override
       public void onRegistered() {
         runningParts.countDown();
+        emitStrategy.schedule(() -> {
+          long stamp = watermark.get();
+          outputQueues.forEach(output -> {
+            try {
+              output.getFirst().put(KafkaStreamElement.FACTORY.watermark(stamp));
+            } catch (InterruptedException ex) {
+              Thread.currentThread().interrupt();
+            }
+          });
+          LOG.debug("Update watermark of downstream queues to {}", stamp);
+        });
         LOG.info("Started receiving part of operator {}", op.getName());
       }
 
@@ -379,18 +395,8 @@ public class KafkaExecutor implements Executor {
             }
             output.put(elem);
           } else if (elem.isWatermark()) {
-            long now = clock.getCurrent();
             clock.update(elem.getTimestamp(), partitionId);
-            long updated = clock.getCurrent();
-            if (updated != now) {
-              outputQueues.forEach(output -> {
-                try {
-                  output.getFirst().put(KafkaStreamElement.FACTORY.watermark(updated));
-                } catch (InterruptedException ex) {
-                  Thread.currentThread().interrupt();
-                }
-              });
-            }
+            watermark.set(clock.getCurrent());
           }
         } catch (InterruptedException ex) {
           Thread.currentThread().interrupt();
@@ -512,9 +518,23 @@ public class KafkaExecutor implements Executor {
     streams.forEach(p -> {
       p.getSecond().observe(p.getFirst(), new StreamObserver<KafkaStreamElement>() {
 
+        AtomicLong watermark = new AtomicLong();
+        WatermarkEmitStrategy emitStrategy = new WatermarkEmitStrategy.Default();
+
         @Override
         public void onRegistered() {
           partitionsLatch.countDown();
+          emitStrategy.schedule(() -> {
+            KafkaStreamElement elem = KafkaStreamElement.FACTORY.watermark(
+                watermark.get());
+            outputs.forEach(output -> {
+              try {
+                output.getFirst().put(elem);
+              } catch (InterruptedException ex) {
+                throw new RuntimeException(ex);
+              }
+            });
+          });
           LOG.info("Started operator {}", op.getName());
         }
         
@@ -526,12 +546,8 @@ public class KafkaExecutor implements Executor {
               // just blindly forward to output
               output.put(elem);
             } else if (elem.isWatermark()) {
-              long now = clock.getCurrent();
               clock.update(elem.getTimestamp(), partitionId);
-              long updated = clock.getCurrent();
-              if (updated != now) {
-                output.put(KafkaStreamElement.FACTORY.watermark(updated));
-              }
+              watermark.set(clock.getCurrent());
             }
           } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
@@ -610,7 +626,7 @@ public class KafkaExecutor implements Executor {
     outputs = createOutputQueues(numPartitions);
     repartitions = createOutputQueues(numPartitions);
     
-    repartitioned = kafkaObservableStream(flow, op.output(), this::fromBytes);
+    repartitioned = kafkaObservableStream(flow, op.output());
     repartitionStream = BlockingQueueObservableStream.wrap(
         executor, op.getName(), repartitions);
     outputStream = BlockingQueueObservableStream.wrap(
@@ -630,6 +646,7 @@ public class KafkaExecutor implements Executor {
         receivingObserver(
             op, parts, latch, repartitions, clock,
             Optional.ofNullable(eventTimeAssigner),
+            new WatermarkEmitStrategy.Default(),
             repartitionWriter::close));
 
 
@@ -716,13 +733,11 @@ public class KafkaExecutor implements Executor {
   @VisibleForTesting
   ObservableStream<KafkaStreamElement> kafkaObservableStream(
       Flow flow,
-      Dataset<?> dataset,
-      Function<byte[], KafkaStreamElement> deserializer) {
+      Dataset<?> dataset) {
 
-    String topic = topicGenerator.apply(flow, dataset);
     return new KafkaObservableStream(
         executor, bootstrapServers,
-        topic, deserializer);
+        topicGenerator.apply(flow, dataset));
   }
 
   /**
@@ -732,13 +747,15 @@ public class KafkaExecutor implements Executor {
   @VisibleForTesting
   OutputWriter outputWriter(Flow flow, Dataset<?> output) {
     KafkaProducer<byte[], byte[]> producer = createProducer();
-    String topic = topicGenerator.apply(flow, output);
+    TopicSpec<Window, Object> topicSpec = (TopicSpec) topicGenerator.apply(flow, output);
+    Serializer<Window> windowSerializer = topicSpec.getWindowSerialization().serializer();
+    Serializer<Object> payloadSerializer = topicSpec.getPayloadSerialization().serializer();
 
     return new OutputWriter() {
 
       @Override
       public int numPartitions() {
-        return producer.partitionsFor(topic).size();
+        return producer.partitionsFor(topicSpec.getName()).size();
       }
 
       @Override
@@ -747,8 +764,9 @@ public class KafkaExecutor implements Executor {
         try {
           // FIXME: serialization
           ProducerRecord<byte[], byte[]> record = new ProducerRecord<>(
-              topic, target, elem.getTimestamp(), String.valueOf(source).getBytes(),
-              toBytes(elem));
+              topicSpec.getName(), target, elem.getTimestamp(),
+              Serialization.Source.newBuilder().setSource(source).build().toByteArray(),
+              toBytes(windowSerializer, payloadSerializer, elem));
           producer.send(record, (meta, exc) -> callback.apply(exc == null, exc));
         } catch (Exception ex) {
           LOG.error("Failed to send {}", elem, ex);
@@ -770,29 +788,6 @@ public class KafkaExecutor implements Executor {
     return "__euphoria_" + (producer == null
         ? source.toString()
         : producer.getName());
-  }
-
-  @SuppressWarnings("unchecked")
-  private Context<Object> mapContext(
-      StreamElement input,
-      BlockingQueue<KafkaStreamElement> output) {
-
-    return new Context<Object>() {
-      @Override
-      public void collect(Object elem) {
-        try {
-          output.put(KafkaStreamElement.FACTORY.data(
-              elem, input.getWindow(), input.getTimestamp()));
-        } catch (InterruptedException ex) {
-          Thread.currentThread().interrupt();
-        }
-      }
-
-      @Override
-      public Object getWindow() {
-        return input.getWindow();
-      }
-    };
   }
 
 
@@ -968,19 +963,22 @@ public class KafkaExecutor implements Executor {
         Serdes.ByteArray().serializer());
   }
 
-  private byte[] toBytes(KafkaStreamElement elem) {
-    // FIXME: serialization
-    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    Output output = new Output(baos);
-    kryo.writeObject(output, elem);
-    output.close();
-    return baos.toByteArray();
-  }
+  private byte[] toBytes(
+      Serializer<Window> windowSerializer,
+      Serializer<Object> payloadSerializer,
+      KafkaStreamElement elem) {
 
-  private KafkaStreamElement fromBytes(byte[] bytes) {
-    // FIXME: serialization   
-    Input input = new Input(bytes);
-    return kryo.readObject(input, KafkaStreamElement.class);
+    Serialization.Element.Type type = toProtoType(elem);
+    Serialization.Element.Builder builder = Serialization.Element.newBuilder()
+        .setType(type);
+    switch (type) {
+      case ELEMENT:
+        builder.setPayload(ByteString.copyFrom(payloadSerializer.apply(elem.getElement())));
+      case WINDOW_TRIGGER:
+        builder.setWindow(ByteString.copyFrom(windowSerializer.apply(elem.getWindow())));
+        break;
+    }
+    return builder.build().toByteArray();
   }
 
   protected java.util.concurrent.Executor getExecutor() {
@@ -998,6 +996,18 @@ public class KafkaExecutor implements Executor {
         + Optional.ofNullable(dataset.getProducer())
             .map(op -> op.getName())
             .orElse("_input_" + dataset.getSource());
+  }
+
+  private Serialization.Element.Type toProtoType(KafkaStreamElement elem) {
+    if (elem.isElement())
+      return Serialization.Element.Type.ELEMENT;
+    if (elem.isWatermark())
+      return Serialization.Element.Type.WATERMARK;
+    if (elem.isWindowTrigger())
+      return Serialization.Element.Type.WINDOW_TRIGGER;
+    if (elem.isEndOfStream())
+      return Serialization.Element.Type.END_OF_STREAM;
+    return Serialization.Element.Type.UNRECOGNIZED;
   }
 
 }
