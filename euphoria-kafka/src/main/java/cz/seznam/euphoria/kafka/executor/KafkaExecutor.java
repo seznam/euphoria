@@ -62,6 +62,7 @@ import cz.seznam.euphoria.shaded.guava.com.google.common.collect.Iterables;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
@@ -69,6 +70,7 @@ import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -321,7 +323,10 @@ public class KafkaExecutor implements Executor {
     stream.observe(
         nameForConsumerOf(input) + "_send",
         sendingObserver(
-            op, runningParts, latch, e -> e, partitioner, numPartitions, writer));
+            op, runningParts, latch, e -> e, partitioner, numPartitions,
+            Optional.empty(),
+            Optional.empty(),
+            writer));
 
 
     VectorClock clock = new VectorClock(input.getNumPartitions());
@@ -433,19 +438,48 @@ public class KafkaExecutor implements Executor {
       UnaryFunction keyExtractor,
       Partitioner partitioner,
       int numPartitions,
+      Optional<ExtractEventTime> eventTimeAssigner,
+      Optional<WatermarkEmitStrategy> emitStrategy,
       OutputWriter writer) {
 
     return new StreamObserver<KafkaStreamElement>() {
 
+      Map<Integer, AtomicLong> watermarks = new ConcurrentHashMap<>();
+
       @Override
       public void onRegistered() {
         runningParts.countDown();
+        if (emitStrategy.isPresent()) {
+          emitStrategy.get().schedule(() -> {
+            watermarks.entrySet().forEach(entry -> {
+              int source = entry.getKey();
+              for (int target = 0; target < numPartitions; target++) {
+                writer.write(KafkaStreamElement.FACTORY.watermark(entry.getValue().get()),
+                    source, target, (succ, exc) -> {
+                      // FIXME: error handling
+                      if (!succ) {
+                        throw new RuntimeException(exc);
+                      }
+                    });
+                };
+            });
+          });
+        }
         LOG.info("Started sending part of operator {}", op.getName());
       }
 
       @Override
       public void onNext(int source, KafkaStreamElement elem) {
         if (elem.isElement()) {
+          AtomicLong watermark = watermarks.get(source);
+          if (watermark == null) {
+            watermarks.put(source, watermark = new AtomicLong());
+          }
+          watermarks.putIfAbsent(source, new AtomicLong());
+          long stamp = eventTimeAssigner.map(
+              assigner -> assigner.extractTimestamp(
+                  elem.getElement())).orElse(elem.getTimestamp());
+          watermark.accumulateAndGet(stamp, (x, y) -> x < y ? y : x);
           int target = partitioner.getPartition(
               keyExtractor.apply(elem.getElement())) & Integer.MAX_VALUE
               % numPartitions;
@@ -639,7 +673,10 @@ public class KafkaExecutor implements Executor {
         nameForConsumerOf(input) + "_send",
         sendingObserver(
             op, parts, latch, keyExtractor, partitioner,
-            numPartitions, repartitionWriter));
+            numPartitions,
+            Optional.ofNullable(eventTimeAssigner),
+            Optional.of(new WatermarkEmitStrategy.Default()),
+            repartitionWriter));
 
     repartitioned.observe(
         nameForConsumerOf(input) + "_process",
