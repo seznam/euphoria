@@ -16,6 +16,7 @@
 package cz.seznam.euphoria.operator.test;
 
 import cz.seznam.euphoria.core.client.dataset.Dataset;
+import cz.seznam.euphoria.core.client.dataset.partitioning.RangePartitioning;
 import cz.seznam.euphoria.core.client.dataset.windowing.Time;
 import cz.seznam.euphoria.core.client.operator.Sort;
 import cz.seznam.euphoria.operator.test.junit.AbstractOperatorTest;
@@ -202,8 +203,7 @@ public class SortTest extends AbstractOperatorTest {
         Dataset<Item> sorted = Sort.of(input)
             .by(Item::getScore)
             .windowBy(Time.of(Duration.ofSeconds(2)), Item::getTime)
-            .setNumPartitions(3)
-            .setPartitioner(i -> i < 10 ? 0 : i < 20 ? 1 : 2)
+            .setPartitioning(new RangePartitioning<>(10, 20))
             .output();
         return sorted;
       }
@@ -212,18 +212,21 @@ public class SortTest extends AbstractOperatorTest {
       public void validate(Partitions<Item> partitions) {
         Assert.assertEquals(3, partitions.size());
 
+        // (0-10>
         List<Item> lowItems = partitions.get(0);
         assertEquals(6, lowItems.size());
         assertEquals(Arrays.asList("two"), between(lowItems, 0, 2000));
         assertEquals(Arrays.asList("1-three", "one-ZZZ-2", "one-3"), between(lowItems, 2000, 4000));
         assertEquals(Arrays.asList("one-ZZZ-1", "2-three"), between(lowItems, 4000, 6000));
         
+        // (10-20>
         List<Item> midItems = partitions.get(1);
         assertEquals(1, midItems.size());
         assertEquals(Arrays.asList(), between(midItems, 0, 2000));
         assertEquals(Arrays.asList("4-four"), between(midItems, 2000, 4000));
         assertEquals(Arrays.asList(), between(midItems, 4000, 6000));
         
+        // (20-MAX>
         List<Item> highItems = partitions.get(2);
         assertEquals(3, highItems.size());
         assertEquals(Arrays.asList("one-XXX-100", "one-999"), between(highItems, 0, 2000));

@@ -49,7 +49,7 @@ import static java.util.Objects.requireNonNull;
     repartitions = 1
 )
 public class Sort<
-        IN, S extends Comparable<S>, W extends Window>
+        IN, S extends Comparable<? super S>, W extends Window>
     extends StateAwareWindowWiseSingleInputOperator<
         IN, IN, IN, Integer, IN, W,
     Sort<IN, S, W>> {
@@ -118,12 +118,12 @@ public class Sort<
       this.input = requireNonNull(input);
     }
 
-    public <S extends Comparable<S>> WindowByBuilder<IN, S> by(UnaryFunction<IN, S> sortByFn) {
+    public <S extends Comparable<? super S>> WindowByBuilder<IN, S> by(UnaryFunction<IN, S> sortByFn) {
       return new WindowByBuilder<>(name, input, requireNonNull(sortByFn));
     }
   }
 
-  public static class WindowByBuilder<IN, S extends Comparable<S>>
+  public static class WindowByBuilder<IN, S extends Comparable<? super S>>
       extends PartitioningBuilder<S, WindowByBuilder<IN, S>>
       implements cz.seznam.euphoria.core.client.operator.OutputBuilder<IN>
   {
@@ -163,7 +163,7 @@ public class Sort<
   }
 
   public static class OutputBuilder<
-      IN, S extends Comparable<S>, W extends Window>
+      IN, S extends Comparable<? super S>, W extends Window>
       extends PartitioningBuilder<S, OutputBuilder<IN, S, W>>
       implements cz.seznam.euphoria.core.client.operator.OutputBuilder<IN>
   {
@@ -268,7 +268,8 @@ public class Sort<
     return dag;
   }
   
-  private static class SortByComparator<V, S extends Comparable<S>> implements Comparator<V>, Serializable {
+  private static class SortByComparator<V, S extends Comparable<? super S>> 
+  implements Comparator<V>, Serializable {
 
     private final UnaryFunction<V, S> sortByFn;
     
@@ -282,7 +283,8 @@ public class Sort<
     }
   }
   
-  private static class PartitionKeyExtractor<IN, S extends Comparable<S>> implements UnaryFunction<IN, Integer> {
+  private static class PartitionKeyExtractor<IN, S extends Comparable<? super S>> 
+  implements UnaryFunction<IN, Integer> {
 
     private final UnaryFunction<IN, S> sortByFn;
     private final Partitioner<S> partitioner;
