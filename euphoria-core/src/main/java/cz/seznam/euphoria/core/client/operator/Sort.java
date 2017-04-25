@@ -21,6 +21,7 @@ import cz.seznam.euphoria.core.client.dataset.Dataset;
 import cz.seznam.euphoria.core.client.dataset.partitioning.HashPartitioning;
 import cz.seznam.euphoria.core.client.dataset.partitioning.Partitioner;
 import cz.seznam.euphoria.core.client.dataset.partitioning.Partitioning;
+import cz.seznam.euphoria.core.client.dataset.partitioning.RangePartitioning;
 import cz.seznam.euphoria.core.client.dataset.windowing.Window;
 import cz.seznam.euphoria.core.client.dataset.windowing.Windowing;
 import cz.seznam.euphoria.core.client.flow.Flow;
@@ -44,15 +45,50 @@ import java.util.List;
 
 import static java.util.Objects.requireNonNull;
 
+/**
+ * Sorts the input dataset.<p>
+ * 
+ * The user is supposed to provide a function that extracts a comparable object
+ * from the input object. The extracted object is than passed to a provided partitioner
+ * to partition the result.<p>
+ * 
+ * To ensure that all elements from a specific range end up 
+ * in the same partition - i.e. perform total sort ordering - it is recommended 
+ * to use {@link RangePartitioning}, otherwise the user is responsible for his partitioning.<p>
+ * 
+ * If user does not provide custom {@link Partitioning} or {@link Partitioner} and number of input 
+ * partitions differs from 1 (single partition), the program crashes, because runtime does not 
+ * know how to partition the result. Input sampling is not supported for now.<p> 
+ * 
+ * Example:
+ *
+ * <pre>{@code
+ *  Dataset<Pair<String, Double>> input = ...;
+ *  Dataset<Pair<String, Double>> sorted =
+ *         Sort.named("SORTED-BY-SCORE")
+ *            .of(input)
+ *            .by(Pair::getSecond)
+ *            .partitioning(new RangePartitioning(0.2, 0.4, 0.6, 0.8)) // numPartitions = 5
+ *            .output();
+ * }</pre>
+ * 
+ * The above example sorts the paired input by the second field. The sorted elements can be
+ * found in 5 partitions of corresponding intervals as follows:
+ * <ul>
+ *   <li>-Inf to 0.2</li>
+ *   <li> 0.2 to 0.4</li>
+ *   <li> 0.4 to 0.6</li>
+ *   <li> 0.6 to 0.8</li>
+ *   <li> 0.8 to Inf</li>
+ * </ul>
+ *
+ */
 @Derived(
-    state = StateComplexity.CONSTANT,
+    state = StateComplexity.LINEAR,
     repartitions = 1
 )
-public class Sort<
-        IN, S extends Comparable<? super S>, W extends Window>
-    extends StateAwareWindowWiseSingleInputOperator<
-        IN, IN, IN, Integer, IN, W,
-    Sort<IN, S, W>> {
+public class Sort<IN, S extends Comparable<? super S>, W extends Window>
+    extends StateAwareWindowWiseSingleInputOperator<IN, IN, IN, Integer, IN, W, Sort<IN, S, W>> {
   
   private static final class Sorted<V>
       extends State<V, V>
@@ -127,7 +163,7 @@ public class Sort<
       extends PartitioningBuilder<S, WindowByBuilder<IN, S>>
       implements cz.seznam.euphoria.core.client.operator.OutputBuilder<IN>
   {
-    private String name;
+    private final String name;
     private final Dataset<IN> input;
     private final UnaryFunction<IN, S> sortByFn;
 
@@ -195,7 +231,7 @@ public class Sort<
     public Dataset<IN> output() {
       Preconditions.checkArgument(validPartitioning(getPartitioning()),
           "Non-single partitioning with default partitioner is not supported on Sort operator. "
-          + "Set single partition or define custom partitioner - probably RangePartitioner?");
+          + "Set single partition or define custom partitioner, e.g. RangePartitioner.");
       Flow flow = input.getFlow();
       Sort<IN, S, W> top =
           new Sort<>(flow, name, input,
@@ -229,6 +265,11 @@ public class Sort<
             @Nullable Windowing<IN, W> windowing,
             @Nullable ExtractEventTime<IN> eventTimeAssigner) {
     super(name, flow, input, 
+        // Key is actually the number of the final partition - it ensures that all records
+        // in one partition (and same window) get into the same state in ReduceStateByKey 
+        // where they are later sorted.
+        // At the same time the key (partition number) is simply used inside partitioner
+        // to ensure that partitioning and states work together.
         new PartitionKeyExtractor<>(sortByFn, partitioning), 
         windowing, eventTimeAssigner, 
         new HashPartitioning<>(partitioning.getNumPartitions()));
@@ -244,32 +285,31 @@ public class Sort<
   public DAG<Operator<?, ?>> getBasicOps() {
     Flow flow = getFlow();
     
-    StateSupport.MergeFromStateMerger<IN, IN, Sorted<IN>>
-            stateCombiner = new StateSupport.MergeFromStateMerger<>();
-    ReduceStateByKey<IN, IN, IN, Integer, IN, Integer, IN, Sorted<IN>, W>
-        reduce =
+    final StateSupport.MergeFromStateMerger<IN, IN, Sorted<IN>> stateCombiner = 
+        new StateSupport.MergeFromStateMerger<>();
+    final SortByComparator<IN, S> comparator = new SortByComparator<>(sortByFn);
+    ReduceStateByKey<IN, IN, IN, Integer, IN, Integer, IN, Sorted<IN>, W> reduce = 
         new ReduceStateByKey<>(getName() + "::ReduceStateByKey", flow, input,
                 keyExtractor,
                 e -> e,
                 windowing,
                 eventTimeAssigner,
                 (StateFactory<IN, IN, Sorted<IN>>)
-                    (ctx, provider) -> new Sorted<>(ctx, provider, new SortByComparator<>(sortByFn)),
+                    (ctx, provider) -> new Sorted<>(ctx, provider, comparator),
                 stateCombiner,
                 partitioning);
 
-    MapElements<Pair<Integer, IN>, IN>
-        format =
+    MapElements<Pair<Integer, IN>, IN> format = 
         new MapElements<>(getName() + "::MapElements", flow, reduce.output(),
-            e -> e.getSecond());
+            Pair::getSecond);
 
     DAG<Operator<?, ?>> dag = DAG.of(reduce);
     dag.add(format, reduce);
     return dag;
   }
-  
+
   private static class SortByComparator<V, S extends Comparable<? super S>> 
-  implements Comparator<V>, Serializable {
+      implements Comparator<V>, Serializable {
 
     private final UnaryFunction<V, S> sortByFn;
     
@@ -284,7 +324,7 @@ public class Sort<
   }
   
   private static class PartitionKeyExtractor<IN, S extends Comparable<? super S>> 
-  implements UnaryFunction<IN, Integer> {
+      implements UnaryFunction<IN, Integer> {
 
     private final UnaryFunction<IN, S> sortByFn;
     private final Partitioner<S> partitioner;

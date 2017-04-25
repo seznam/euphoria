@@ -17,6 +17,7 @@ package cz.seznam.euphoria.spark;
 
 import cz.seznam.euphoria.core.client.dataset.partitioning.Partitioning;
 import cz.seznam.euphoria.core.client.dataset.windowing.MergingWindowing;
+import cz.seznam.euphoria.core.client.dataset.windowing.TimedWindow;
 import cz.seznam.euphoria.core.client.dataset.windowing.Window;
 import cz.seznam.euphoria.core.client.dataset.windowing.Windowing;
 import cz.seznam.euphoria.core.client.functional.UnaryFunction;
@@ -59,16 +60,26 @@ class SortTranslator implements SparkOperatorTranslator<Sort> {
             : operator.getWindowing();
 
     // ~ extract key/value + timestamp from input elements and assign windows
-    JavaPairRDD<Tuple3<Integer, Window, Comparable>, Object> tuples = input.flatMapToPair(
+    JavaPairRDD<Tuple3<Integer, Window, Comparable>, TimestampedElement> tuples = input.flatMapToPair(
             new CompositeKeyExtractor(keyExtractor, sortByFn, windowing, eventTimeAssigner));
     
     Partitioner partitioner = new PartitioningWrapper(operator.getPartitioning().getNumPartitions());
     Comparator comparator = new TripleComparator();
 
-    JavaPairRDD<Tuple3<Integer, Window, Comparable>, Object> sorted = 
+    JavaPairRDD<Tuple3<Integer, Window, Comparable>, TimestampedElement> sorted = 
         tuples.repartitionAndSortWithinPartitions(partitioner, comparator);
     
-    return sorted.values();
+    return sorted.map(t -> {
+      Tuple3<Integer, Window, Comparable> kw = t._1();
+      TimestampedElement el = t._2();
+
+      // ~ extract timestamp from element rather than from KeyedWindow
+      // because in KeyedWindow there is the original timestamp from
+      // pre-reduce age
+      long timestamp = el.getTimestamp();
+
+      return new SparkElement<>(kw._2(), timestamp, el.getElement());
+    });
   }
   
   /**
@@ -77,7 +88,7 @@ class SortTranslator implements SparkOperatorTranslator<Sort> {
    * The result composite key tuple consists of [partitionId, window, sortByKey].
    */
   private static class CompositeKeyExtractor
-          implements PairFlatMapFunction<SparkElement, Tuple3<Integer, Window, Comparable>, Object> {
+      implements PairFlatMapFunction<SparkElement, Tuple3<Integer, Window, Comparable>, TimestampedElement> {
 
     private final UnaryFunction<Object, Integer> keyExtractor;
     private final UnaryFunction<Object, Comparable> sortByFn;
@@ -97,17 +108,22 @@ class SortTranslator implements SparkOperatorTranslator<Sort> {
 
     @Override
     @SuppressWarnings("unchecked")
-    public Iterator<Tuple2<Tuple3<Integer, Window, Comparable>, Object>> call(SparkElement wel) throws Exception {
+    public Iterator<Tuple2<Tuple3<Integer, Window, Comparable>, TimestampedElement>> call(SparkElement wel) 
+        throws Exception {
       if (eventTimeAssigner != null) {
         wel.setTimestamp(eventTimeAssigner.extractTimestamp(wel.getElement()));
       }
 
       Iterable<Window> windows = windowing.assignWindowsToElement(wel);
-      List<Tuple2<Tuple3<Integer, Window, Comparable>, Object>> out = new ArrayList<>();
+      List<Tuple2<Tuple3<Integer, Window, Comparable>, TimestampedElement>> out = new ArrayList<>();
       for (Window wid : windows) {
         Object el = wel.getElement();
+        long stamp = (wid instanceof TimedWindow)
+                ? ((TimedWindow) wid).maxTimestamp()
+                : wel.getTimestamp();
         out.add(new Tuple2<>(
-            new Tuple3(keyExtractor.apply(el), wid, sortByFn.apply(el)), wel));
+            new Tuple3(keyExtractor.apply(el), wid, sortByFn.apply(el)), 
+            new TimestampedElement(stamp, el)));
       }
       return out.iterator();
     }

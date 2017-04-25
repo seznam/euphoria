@@ -340,7 +340,7 @@ public class InMemExecutorTest {
 
     @Override
     public int compareTo(SizedCountWindow o) {
-      return 0;
+      return Integer.compare(size, o.size);
     }
   } // ~ end of SizedCountWindow
 

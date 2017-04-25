@@ -15,6 +15,7 @@
  */
 package cz.seznam.euphoria.flink.batch;
 
+import cz.seznam.euphoria.core.client.dataset.partitioning.Partitioner;
 import cz.seznam.euphoria.core.client.dataset.windowing.MergingWindowing;
 import cz.seznam.euphoria.core.client.dataset.windowing.Window;
 import cz.seznam.euphoria.core.client.dataset.windowing.Windowing;
@@ -23,12 +24,12 @@ import cz.seznam.euphoria.core.client.operator.ExtractEventTime;
 import cz.seznam.euphoria.core.client.operator.Sort;
 import cz.seznam.euphoria.flink.FlinkOperator;
 import cz.seznam.euphoria.flink.Utils;
-import cz.seznam.euphoria.flink.functions.PartitionerWrapper;
 import cz.seznam.euphoria.shaded.guava.com.google.common.collect.Iterables;
 import org.apache.flink.api.common.operators.Order;
 import org.apache.flink.api.common.typeinfo.TypeHint;
 import org.apache.flink.api.java.DataSet;
 import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.util.Preconditions;
 
 /**
  * Translator of {@code Union} operator.
@@ -83,7 +84,7 @@ class SortTranslator implements BatchOperatorTranslator<Sort> {
     
     // ~ repartition and sort partitions
     DataSet<BatchElement> sorted = wAssigned
-        .partitionCustom(new PartitionerWrapper<>(
+        .partitionCustom(new SortPartitionerWrapper<>(
             origOperator.getPartitioning().getPartitioner()),
             Utils.wrapQueryable(we -> udfKey.apply(we.getElement()), Integer.class))
         .setParallelism(operator.getParallelism())
@@ -94,5 +95,25 @@ class SortTranslator implements BatchOperatorTranslator<Sort> {
         .name(operator.getName() + "::sort");
     
     return sorted;
+  }
+  
+  public class SortPartitionerWrapper<T> 
+      implements org.apache.flink.api.common.functions.Partitioner<T> {
+    
+    private final Partitioner<T> partitioner;
+    
+    public SortPartitionerWrapper(Partitioner<T> partitioner) {
+      this.partitioner = partitioner;
+    }
+    
+    @Override
+    public int partition(T elem, int numPartitions) {
+      int ret = partitioner.getPartition(elem);
+      // already presume that the partitioner returns the number in the correct range
+      Preconditions.checkArgument(
+          ret >= 0 && ret < numPartitions, 
+          "Unexpected partition number " + ret + " with number of partitions " + numPartitions);
+      return ret;
+    }
   }
 }

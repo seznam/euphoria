@@ -19,6 +19,7 @@ import cz.seznam.euphoria.shaded.guava.com.google.common.base.Preconditions;
 import cz.seznam.euphoria.shaded.guava.com.google.common.collect.Comparators;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
@@ -29,12 +30,12 @@ import java.util.List;
  * @param <T> type of ranges - must be a subtype {@link Comparable} as well as {@link Serializable}
  */
 public class RangePartitioning<T extends Comparable<? super T> & Serializable> 
-implements Partitioning<T> {
+    implements Partitioning<T> {
   
   private final List<T> ranges;
   
   public RangePartitioning(List<T> ranges) {
-    this.ranges = ranges;
+    this.ranges = new ArrayList<>(ranges);
     Preconditions.checkArgument(
         Comparators.isInStrictOrder(ranges, Comparator.naturalOrder()),
         "Ranges are expected to be sorted!");
