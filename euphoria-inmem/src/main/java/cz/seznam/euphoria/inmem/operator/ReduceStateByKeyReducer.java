@@ -416,8 +416,7 @@ public class ReduceStateByKeyReducer implements Consumer<StreamElement<Object>> 
     private Map<Window, Long> flushedWindows = new HashMap<>();
 
     private ProcessingState(
-        BlockingQueue<StreamElement> output,
-        Collector<StreamElement> stateOutput,
+        Collector<StreamElement> output,
         TriggerScheduler<Window, Object> triggering,
         StateFactory stateFactory,
         StateMerger stateMerger,
@@ -502,9 +501,10 @@ public class ReduceStateByKeyReducer implements Consumer<StreamElement<Object>> 
       return state;
     }
 
+    @SuppressWarnings("unchecked")
     private KeyedElementCollector newCollector(KeyedWindow kw) {
       return new KeyedElementCollector(
-          (Collector) stateOutput, kw.window(), kw.key(),
+          (Collector) output, kw.window(), kw.key(),
           processing.triggering::getCurrentTimestamp,
           elementFactory);
     }
@@ -613,9 +613,7 @@ public class ReduceStateByKeyReducer implements Consumer<StreamElement<Object>> 
   @SuppressWarnings("unchecked")
   public ReduceStateByKeyReducer(ReduceStateByKey operator,
                           String name,
-                          BlockingQueue<? extends StreamElement<?>> input,
-                          BlockingQueue<? extends StreamElement<?>> output,
-                          Collector<? extends StreamElement<?>> stateOutput,
+                          Collector<? extends StreamElement<?>> output,
                           UnaryFunction keyExtractor,
                           UnaryFunction valueExtractor,
                           TriggerScheduler scheduler,
@@ -641,7 +639,6 @@ public class ReduceStateByKeyReducer implements Consumer<StreamElement<Object>> 
         requireNonNull(operator.getStateMerger()),
         storageProvider,
         allowEarlyEmitting);
-    this.elementFactory = elementFactory;
   }
 
   <W extends Window, K> Triggerable<W, K> guardTriggerable(Triggerable<W, K> t) {

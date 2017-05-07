@@ -17,7 +17,7 @@
 package cz.seznam.euphoria.kafka.executor;
 
 import com.google.protobuf.ByteString;
-import cz.seznam.euphoria.core.annotation.Experimental;
+import cz.seznam.euphoria.core.annotation.stability.Experimental;
 import cz.seznam.euphoria.core.client.dataset.Dataset;
 import cz.seznam.euphoria.core.client.dataset.partitioning.Partitioner;
 import cz.seznam.euphoria.core.client.dataset.partitioning.Partitioning;
@@ -480,8 +480,8 @@ public class KafkaExecutor implements Executor {
               assigner -> assigner.extractTimestamp(
                   elem.getElement())).orElse(elem.getTimestamp());
           watermark.accumulateAndGet(stamp, (x, y) -> x < y ? y : x);
-          int target = partitioner.getPartition(
-              keyExtractor.apply(elem.getElement())) & Integer.MAX_VALUE
+          int target = (partitioner.getPartition(
+              keyExtractor.apply(elem.getElement())) & Integer.MAX_VALUE)
               % numPartitions;
           writer.write(elem, source, target, (succ, exc) -> {
             // FIXME: error handling
@@ -630,7 +630,7 @@ public class KafkaExecutor implements Executor {
   private void reduceStateByKey(
       Flow flow,
       Node<Operator<?, ?>> node,
-      ReduceStateByKey<?, ?, ?, ?, ?, ?, ?, ?, ?> op,
+      ReduceStateByKey<?, ?, ?, ?, ?, ?> op,
       CountDownLatch latch) {
 
 
@@ -650,7 +650,7 @@ public class KafkaExecutor implements Executor {
     BlockingQueueObservableStream<KafkaStreamElement> repartitionStream;
     BlockingQueueObservableStream<KafkaStreamElement> outputStream;
     OutputWriter repartitionWriter = outputWriter(flow, op.output());
-    int numPartitions = numPartitions(
+    final int numPartitions = numPartitions(
         repartitionWriter.numPartitions(),
         partitioning.getNumPartitions());
 
@@ -705,6 +705,8 @@ public class KafkaExecutor implements Executor {
           new WatermarkEmitStrategy.Default(),
           // FIXME: specify storage provider
           new InMemStorageProvider(),
+          // FIXME: configurable
+          false,
           KafkaStreamElement.FACTORY);
 
       reducer.setup();
@@ -1022,8 +1024,15 @@ public class KafkaExecutor implements Executor {
     return executor;
   }
 
-  private int numPartitions(int input, int partitioning) {
-    return partitioning > 0 ? Math.min(input, partitioning) : input;
+  private int numPartitions(int writer, int partitioning) {
+    if (partitioning > 0) {
+      if (writer < partitioning) {
+        throw new IllegalStateException(
+            "Need topic with at least " + partitioning + " partitions!");
+      }
+      return partitioning;
+    }
+    return writer;
   }
 
   // retrieve topic that the given dataset should be stored into
