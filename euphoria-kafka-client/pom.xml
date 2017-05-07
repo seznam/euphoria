@@ -31,7 +31,7 @@
     <kafka.version>0.10.0.1</kafka.version>
   </properties>
 
-  <artifactId>euphoria-kafka_${kafka.major}</artifactId>
+  <artifactId>euphoria-kafka-client_${kafka.major}</artifactId>
   <packaging>jar</packaging>
 
   <name>${project.groupId}:${project.artifactId}</name>
@@ -39,32 +39,10 @@
     DataSource and DataSink implementations for Apache Kafka.
   </description>
 
-  <build>
-    <plugins>
-      <plugin>
-        <groupId>com.github.os72</groupId>
-        <artifactId>protoc-jar-maven-plugin</artifactId>
-        <version>3.2.0.1</version>
-        <executions>
-          <execution>
-            <phase>generate-sources</phase>
-            <goals><goal>run</goal></goals>
-          </execution>
-        </executions>
-      </plugin>
-    </plugins>
-  </build>
-
   <dependencies>
     <dependency>
       <groupId>${project.groupId}</groupId>
       <artifactId>euphoria-core</artifactId>
-    </dependency>
-
-    <dependency>
-      <groupId>${project.groupId}</groupId>
-      <artifactId>euphoria-operator-testkit</artifactId>
-      <scope>test</scope>
     </dependency>
 
     <dependency>
@@ -80,12 +58,6 @@
     <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-api</artifactId>
-    </dependency>
-
-    <dependency>
-      <groupId>org.slf4j</groupId>
-      <artifactId>log4j-over-slf4j</artifactId>
-      <version>1.7.25</version>
     </dependency>
 
     <dependency>
@@ -117,17 +89,6 @@
     </dependency>
 
     <dependency>
-      <groupId>${project.groupId}</groupId>
-      <artifactId>euphoria-hadoop</artifactId>
-      <exclusions>
-        <exclusion>
-          <groupId>org.slf4j</groupId>
-          <artifactId>slf4j-log4j12</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
-
-    <dependency>
       <groupId>junit</groupId>
       <artifactId>junit</artifactId>
       <scope>test</scope>
@@ -146,14 +107,6 @@
       <scope>test</scope>
     </dependency>
 
-
-    <dependency>
-      <groupId>com.google.protobuf</groupId>
-      <artifactId>protobuf-java</artifactId>
-      <version>3.2.0</version>
-    </dependency>
-
-    
     <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
