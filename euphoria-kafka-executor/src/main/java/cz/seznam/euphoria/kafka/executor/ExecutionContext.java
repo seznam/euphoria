@@ -26,14 +26,17 @@ import org.slf4j.LoggerFactory;
 /**
  * A context for providing readers for datasets.
  */
-public class ExecutionContext {
+class ExecutionContext {
 
   private static final Logger LOG = LoggerFactory.getLogger(ExecutionContext.class);
 
   final Map<Dataset<?>, ObservableStream<KafkaStreamElement>> streams = new HashMap<>();
 
-  public void register(Dataset<?> dataset, ObservableStream<KafkaStreamElement> stream) {
-    streams.put(dataset, stream);
+  void register(
+      Dataset<?> dataset,
+      ObservableStream<KafkaStreamElement> stream) {
+
+    this.streams.put(dataset, stream);
     if (LOG.isDebugEnabled()) {
       if (dataset.getProducer() != null) {
         LOG.debug(
@@ -52,8 +55,7 @@ public class ExecutionContext {
   }
 
   public ObservableStream<KafkaStreamElement> get(Dataset<?> dataset) {
-    return Objects.requireNonNull(
-        streams.get(dataset),
+    return Objects.requireNonNull(streams.get(dataset),
         "Cannot find stream for dataset " + dataset
             + " produced by " + dataset.getProducer());
   }

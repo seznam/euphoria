@@ -15,31 +15,25 @@
  */
 package cz.seznam.euphoria.kafka.executor;
 
-import java.util.List;
-
 /**
  * An observer of streaming data.
  */
 public interface StreamObserver<T> {
 
   /**
-   * Called when the observer is registered in the observable stream.
-   */
-  default void onRegistered() {
-    
-  }
-
-  /**
    * Called each time partitions are assigned or the assignment is changed.
-   * @param partitions partitions assigned to the observer
+   * @param numPartitions total number of partitions assigned to this observer
+   * Each observer will retrieve elements fro partitions (0, numPartitions - 1).
+   * These partitions do not necessarily correspond to any physical partitions
+   * numbering of partitions (e.g. inside Kafka).
    */
-  default void onAssign(List<Integer> partitions) {
+  default void onAssign(int numPartitions) {
 
   }
 
   /**
    * Observe next data element.
-   * @param partitionId ID of partition of the input element
+   * @param partitionId ID of partition of the input element (zero based)
    * @param elem the input element
    */
   void onNext(int partitionId, T elem);

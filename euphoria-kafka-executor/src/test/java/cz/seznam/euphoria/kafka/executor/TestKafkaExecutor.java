@@ -20,9 +20,9 @@ import cz.seznam.euphoria.core.client.dataset.Dataset;
 import cz.seznam.euphoria.core.client.flow.Flow;
 import cz.seznam.euphoria.core.client.graph.DAG;
 import cz.seznam.euphoria.core.client.operator.Operator;
-import cz.seznam.euphoria.core.client.util.Pair;
 import cz.seznam.euphoria.kafka.executor.io.Serde;
 import cz.seznam.euphoria.kafka.executor.io.TopicSpec;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -58,8 +58,8 @@ class TestKafkaExecutor extends KafkaExecutor {
 
   @Override
   OutputWriter outputWriter(Flow flow, Dataset<?> output) {
-    List<Pair<BlockingQueue<KafkaStreamElement>, Integer>> queues;
-    queues = createOutputQueues(output.getNumPartitions());
+    List<BlockingQueue<KafkaStreamElement>> queues = new ArrayList<>();
+    createOutputQueues(queues, output.getNumPartitions());
     String topic = topicGenerator.apply(flow, output).getName();
     topicQueues.put(
         topic,
@@ -76,7 +76,7 @@ class TestKafkaExecutor extends KafkaExecutor {
       public void write(
           KafkaStreamElement elem, int source, int target, Callback callback) {
         try {
-          queues.get(target).getFirst().put(new KafkaStreamElement(
+          queues.get(target).put(new KafkaStreamElement(
               elem.getElement(),
               elem.getWindow(),
               elem.getTimestamp(),

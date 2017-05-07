@@ -23,14 +23,21 @@ import cz.seznam.euphoria.kafka.executor.io.Serde.Deserializer;
 import cz.seznam.euphoria.kafka.executor.io.TopicSpec;
 import cz.seznam.euphoria.kafka.executor.proto.Serialization;
 import cz.seznam.euphoria.shaded.guava.com.google.common.base.Joiner;
+import java.io.Closeable;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -46,84 +53,113 @@ import org.slf4j.LoggerFactory;
 /**
  * A stream stored in Apache Kafka topic.
  */
-public class KafkaObservableStream
-    implements ObservableStream<KafkaStreamElement> {
+class KafkaObservableStream
+    implements ObservableStream<KafkaStreamElement>, Closeable {
 
   private static final Logger LOG = LoggerFactory.getLogger(KafkaObservableStream.class);
 
+  private final String name;
   private final String topic;
+  private final KafkaConsumer<byte[], byte[]> consumer;
   private final Executor executor;
   private final String[] bootstrapServers;
   private final Deserializer<Window> windowDeserializer;
   private final Deserializer<Object> payloadDeserializer;
   private final AtomicReference<List<Integer>> assignedPartitions;
+  private final AtomicBoolean finish = new AtomicBoolean();
+  private final Set<Integer> finishedPartitions;
+  private final BlockingQueue<StreamObserver<KafkaStreamElement>> newObservers;
+  private final AtomicBoolean signalAssignment = new AtomicBoolean(false);
 
   @SuppressWarnings("unchecked")
   KafkaObservableStream(
       Executor executor,
       String[] bootstrapServers,
-      TopicSpec spec) {
+      TopicSpec spec,
+      String name) {
 
-    this.topic = spec.getName();
+    this.name = name;
+    this.topic = spec.getName();    
     this.executor = executor;
     this.bootstrapServers = bootstrapServers;
     this.windowDeserializer = spec.getWindowSerialization().deserializer();
     this.payloadDeserializer = spec.getPayloadSerialization().deserializer();
     this.assignedPartitions = new AtomicReference<>();
+    this.newObservers = new LinkedBlockingQueue<>();
+    this.finishedPartitions = Collections.synchronizedSet(new HashSet<>());
+   
+    this.consumer = createConsumer(name, bootstrapServers, topic);
+    CountDownLatch assignmentLatch = new CountDownLatch(1);
+    consumer.subscribe(Arrays.asList(topic), rebalanceListener(assignmentLatch));
+    executor.execute(this::startObserving);
+    try {
+      assignmentLatch.await();
+    } catch (InterruptedException ex) {
+      consumer.close();
+      Thread.currentThread().interrupt();
+    }
+    
+  }
+
+  private void startObserving() {
+    LOG.info("Started to observe Kafka topic {}", topic);
+    List<StreamObserver<KafkaStreamElement>> registered = new ArrayList<>();
+    try {
+      while (!Thread.currentThread().isInterrupted() && !finish.get()) {
+        if (!newObservers.isEmpty()) {
+          List<StreamObserver<KafkaStreamElement>> added = new ArrayList<>();
+          newObservers.drainTo(added);
+          added.forEach(o -> o.onAssign(assignedPartitions.get().size()));
+          registered.addAll(added);
+        }
+        if (signalAssignment.get()) {
+          signalAssignment.set(false);
+          registered.forEach(o -> o.onAssign(assignedPartitions.get().size()));
+        }
+        ConsumerRecords<byte[], byte[]> polled = consumer.poll(100);
+        for (ConsumerRecord<byte[], byte[]> r : polled) {
+          Optional<KafkaStreamElement> parsed = deserialize(r.timestamp(), r.value());
+          if (parsed.isPresent()) {
+            KafkaStreamElement elem = parsed.get();
+            if (!elem.isEndOfStream()) {
+              registered.forEach(o -> o.onNext(
+                  assignedPartitions.get().indexOf(r.partition()), elem));
+            } else {
+              finishedPartitions.add(r.partition());
+              if (finishedPartitions.size() == assignedPartitions.get().size()) {
+                finish.set(true);
+              }
+            }
+          }
+        }
+        if (!polled.isEmpty()) {
+          // FIXME: this doesn't have exactly once-semantics
+          // need to start working with the state checkpointing
+          // and CHECKPOINT and RESET_TO_CHECKPOINT messages
+          // sent across the whole computation
+          consumer.commitAsync();
+        }
+
+      }
+      consumer.close();
+      registered.forEach(o -> o.onCompleted());
+    } catch (Throwable err) {
+      registered.forEach(o -> o.onError(err));
+    }
+  }
+
+
+  @Override
+  public int size() {
+    return consumer.partitionsFor(topic).size();
   }
 
   @Override
-  public void observe(
-      String name, StreamObserver<KafkaStreamElement> observer) {
-    
-    executor.execute(() -> {
-      KafkaConsumer<byte[], byte[]> consumer = createConsumer(
-          name, bootstrapServers, topic);
-      boolean first = true;
-      try {
-        boolean finished = false;
-        Set<Integer> finishedPartitions = new HashSet<>();
-        while (!finished && !Thread.currentThread().isInterrupted()) {
-          ConsumerRecords<byte[], byte[]> polled = consumer.poll(100);
-          if (first) {
-            LOG.info("Started to consume topic {}", topic);
-            observer.onRegistered();
-            first = false;
-          }
-          for (ConsumerRecord<byte[], byte[]> r : polled) {
-            Optional<KafkaStreamElement> parsed = deserialize(r.timestamp(), r.value());
-            if (parsed.isPresent()) {
-              KafkaStreamElement elem = parsed.get();
-              if (!elem.isEndOfStream()) {
-                observer.onNext(
-                    r.partition(),
-                    elem);
-              } else {
-                finishedPartitions.add(r.partition());
-                if (finishedPartitions.size() == assignedPartitions.get().size()) {
-                  finished = true;
-                }
-              }
-            }            
-          }
-          if (!polled.isEmpty()) {
-            // FIXME: this doesn't have exactly once-semantics
-            // need to start working with the state checkpointing
-            // and CHECKPOINT and RESET_TO_CHECKPOINT messages
-            // sent across the whole computation
-            consumer.commitAsync();
-          }
-        }
-        observer.onCompleted();
-      } catch (Throwable thrwbl) {
-        LOG.error("Error reading stream {}", name, thrwbl);
-        observer.onError(thrwbl);
-      }
-      consumer.close();
-    });
+  public void observe(StreamObserver<KafkaStreamElement> observer) {
+    newObservers.add(observer);
   }
 
-  protected KafkaConsumer<byte[], byte[]> createConsumer(
+  private KafkaConsumer<byte[], byte[]> createConsumer(
       String name, String[] bootstrapServers, String topic) {
 
     Properties props = new Properties();
@@ -139,17 +175,10 @@ public class KafkaObservableStream
         ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
         Serdes.ByteArray().deserializer().getClass());
     
-    KafkaConsumer<byte[], byte[]> consumer = new KafkaConsumer<>(props);
-    consumer.subscribe(Arrays.asList(topic), rebalanceListener());
-    return consumer;
+    return new KafkaConsumer<>(props);
   }
 
-  @Override
-  public int size() {
-    return assignedPartitions.get().size();
-  }
-
-  private ConsumerRebalanceListener rebalanceListener() {
+  private ConsumerRebalanceListener rebalanceListener(CountDownLatch latch) {
     return new ConsumerRebalanceListener() {
 
       @Override
@@ -162,6 +191,9 @@ public class KafkaObservableStream
         assignedPartitions.set(partitions
             .stream().map(TopicPartition::partition)
             .collect(Collectors.toList()));
+        finishedPartitions.clear();
+        signalAssignment.set(true);
+        latch.countDown();
       }
 
     };
@@ -193,6 +225,11 @@ public class KafkaObservableStream
       LOG.warn("Cannot deserialize input data", ex);
     }
     return Optional.empty();
+  }
+
+  @Override
+  public void close() {
+    finish.set(true);
   }
 
 }

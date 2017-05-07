@@ -51,4 +51,11 @@ public class VectorClock {
     return min;
   }
 
+  /**
+   * Retrieve dimensionality of this clock.
+   */
+  public int size() {
+    return current.length;
+  }
+
 }

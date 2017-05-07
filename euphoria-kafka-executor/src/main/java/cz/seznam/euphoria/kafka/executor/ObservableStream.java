@@ -23,20 +23,14 @@ public interface ObservableStream<T> {
 
   /**
    * Start to observe the stream.
-   * The observer will receive elements from all partitions of this
+   * The observer will receive elements from all partitions assigned to this
    * stream.
-   * Each observer has a name, when there exist multiple observers
-   * with the same name, then the stream is load balanced between them.
-   * Observers with different names see the same data.
-   * @param name name of the observer
    * @param observer the observer
    */
-  void observe(String name, StreamObserver<T> observer);
-
+  void observe(StreamObserver<T> observer);
 
   /**
-   * Retrieve number of partitions of the stream.
-   * @return number of partitions of the stream.
+   * Retrieve number of partitions.
    */
   int size();
 

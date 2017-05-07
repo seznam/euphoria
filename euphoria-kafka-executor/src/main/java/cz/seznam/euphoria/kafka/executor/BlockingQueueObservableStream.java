@@ -16,23 +16,24 @@
 
 package cz.seznam.euphoria.kafka.executor;
 
-import cz.seznam.euphoria.core.client.util.Pair;
 import cz.seznam.euphoria.inmem.operator.StreamElement;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * An {@code ObservableStream} backed up by {@code BlockingQueue}.
  */
 public class BlockingQueueObservableStream<T extends StreamElement<?>>
     implements ObservableStream<T> {
+
+  private static final Logger LOG = LoggerFactory.getLogger(BlockingQueueObservableStream.class);
 
   /**
    * Create observable stream from given {@code BlockingQueue}.
@@ -47,7 +48,7 @@ public class BlockingQueueObservableStream<T extends StreamElement<?>>
   public static <T extends StreamElement<?>> BlockingQueueObservableStream<T> wrap(
       Executor executor,
       String operator,
-      List<Pair<BlockingQueue<T>, Integer>> queues) {
+      List<BlockingQueue<T>> queues) {
 
     BlockingQueueObservableStream<T> ret;
     ret = new BlockingQueueObservableStream<>(
@@ -57,19 +58,19 @@ public class BlockingQueueObservableStream<T extends StreamElement<?>>
 
   final Executor executor;
   final String operator;
-  final List<Pair<BlockingQueue<T>, Integer>> queues;
+  final List<BlockingQueue<T>> queues;
   final int numOutputQueues;
   
-  final Set<String> observerNames = new HashSet<>();
   final List<StreamObserver<T>> observers = new ArrayList<>();
 
   final AtomicInteger finished = new AtomicInteger(0);
   final AtomicBoolean error = new AtomicBoolean(false);
+  final Exception exc = new RuntimeException();
 
   private BlockingQueueObservableStream(
       Executor executor,
       String operator,
-      List<Pair<BlockingQueue<T>, Integer>> queues) {
+      List<BlockingQueue<T>> queues) {
 
     this.executor = executor;
     this.operator = operator;
@@ -79,25 +80,32 @@ public class BlockingQueueObservableStream<T extends StreamElement<?>>
       throw new IllegalArgumentException(
           "List of outbound queues cannot be zero-length.");
     }
-    for (Pair<BlockingQueue<T>, Integer> q : queues) {
+    int partitionId = 0;
+    for (BlockingQueue<T> q : queues) {
+      int c = partitionId++;
       executor.execute(() -> {
-        forwardQueue(q.getFirst(), q.getSecond());
+        try {
+          forwardQueue(q, c);
+        } catch (Exception ex) {
+          LOG.error("Error observing stream of operator {}", operator, ex);
+        }
       });
     }
   }
 
   @Override
-  public void observe(String name, StreamObserver<T> observer) {
-    if (observerNames.contains(name)) {
-      // we do not support rebalancing of partitions at this time
-      throw new UnsupportedOperationException(
-          "Multiple consumers of in-process streams is not supported.");
-    }
+  public int size() {
+    return queues.size();
+  }
+
+
+  @Override
+  public void observe(StreamObserver<T> observer) {
     executor.execute(() -> {
       synchronized (observers) {
         observers.add(observer);
-      }
-      observer.onRegistered();
+        observer.onAssign(numOutputQueues);
+      }      
     });
   }
 
@@ -107,6 +115,12 @@ public class BlockingQueueObservableStream<T extends StreamElement<?>>
         T elem = queue.take();
         if (!elem.isEndOfStream()) {
           synchronized (observers) {
+            if (observers.isEmpty()) {
+              LOG.error("No observer for element {}. Trace of constructor of "
+                  + "this queue follows:", elem, exc);
+              throw new IllegalStateException("Cannot forward element " + elem
+                  + " to any observer! This object was created");
+            }
             observers.forEach(o -> {
               synchronized (o) {
                 o.onNext(partitionId, elem);
@@ -128,18 +142,9 @@ public class BlockingQueueObservableStream<T extends StreamElement<?>>
     }
     if (finished.incrementAndGet() == numOutputQueues) {
       synchronized (observers) {
-        try {
-          observers.forEach(o -> o.onCompleted());
-        } catch (Exception ex) {
-          ex.printStackTrace();
-        }
+        observers.forEach(o -> o.onCompleted());
       }
     }
-  }
-
-  @Override
-  public int size() {
-    return numOutputQueues;
   }
 
 }
