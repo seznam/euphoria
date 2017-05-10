@@ -15,6 +15,7 @@
  */
 package cz.seznam.euphoria.core.client.io;
 
+import cz.seznam.euphoria.core.client.util.Either;
 import cz.seznam.euphoria.shaded.guava.com.google.common.collect.Lists;
 import cz.seznam.euphoria.shaded.guava.com.google.common.collect.Sets;
 
@@ -127,7 +128,7 @@ public class ListDataSource<T> implements DataSource<T> {
             }
 
             @Override
-            public T next() {
+            public Either<T, Long> next() {
               try {
                 if (sleepMs > 0) {
                   Thread.sleep(sleepMs);
@@ -135,7 +136,7 @@ public class ListDataSource<T> implements DataSource<T> {
               } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
               }
-              return data.get(pos++);
+              return Either.left(data.get(pos++));
             }
 
           };

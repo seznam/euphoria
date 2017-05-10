@@ -37,6 +37,7 @@ import cz.seznam.euphoria.core.client.operator.ReduceStateByKey;
 import cz.seznam.euphoria.core.client.operator.Repartition;
 import cz.seznam.euphoria.core.client.operator.Union;
 import cz.seznam.euphoria.core.client.operator.state.StorageProvider;
+import cz.seznam.euphoria.core.client.util.Either;
 import cz.seznam.euphoria.core.client.util.Pair;
 import cz.seznam.euphoria.core.executor.Executor;
 import cz.seznam.euphoria.core.executor.FlowUnfolder;
@@ -87,12 +88,13 @@ public class InMemExecutor implements Executor {
 
   static final class PartitionSupplierStream implements Supplier {
 
-    final Reader<?> reader;
-    final Partition<?> partition;
+    final Reader<Object> reader;
+    final Partition<Object> partition;
+    @SuppressWarnings("unchecked")
     PartitionSupplierStream(Partition<?> partition) {
-      this.partition = partition;
+      this.partition = (Partition) partition;
       try {
-        this.reader = partition.openReader();
+        this.reader = this.partition.openReader();
       } catch (IOException e) {
         throw new RuntimeException(
             "Failed to open reader for partition: " + partition, e);
@@ -110,12 +112,16 @@ public class InMemExecutor implements Executor {
         }
         return Datum.endOfStream();
       }
-      Object next = this.reader.next();
-      // we assign it to batch
-      // which means null group, and batch label
-      return Datum.of(GlobalWindowing.Window.get(), next,
-          // ingestion time
-          System.currentTimeMillis());
+      Either<Object, Long> next = this.reader.next();
+      if (next.isLeft()) {
+        // we assign it to batch
+        return Datum.of(GlobalWindowing.Window.get(), next.left(),
+            // ingestion time
+            System.currentTimeMillis());
+      } else {
+        // emit watermark
+        return Datum.watermark(next.right());
+      }
     }
   }
 
@@ -403,6 +409,9 @@ public class InMemExecutor implements Executor {
     // consume outputs
     for (Node<Operator<?, ?>> output : leafs) {
       DataSink<?> sink = output.get().output().getOutputSink();
+      if (sink == null) {
+        continue;
+      }
       sink.initialize();
       final InputProvider provider = context.get(output.get(), null);
       int part = 0;
@@ -720,7 +729,7 @@ public class InMemExecutor implements Executor {
               datum.setTimestamp(assigner.extractTimestamp(datum.getElement()));
             }
 
-            if (!handleMetaData(datum, ret, readerId, clocks, !hasTimeAssignment)) {
+            if (!handleMetaData(datum, ret, readerId, clocks, true)) {
 
               // extract element's timestamp if available
               long elementStamp = datum.getTimestamp();

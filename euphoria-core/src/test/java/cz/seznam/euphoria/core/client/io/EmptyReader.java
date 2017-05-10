@@ -15,6 +15,7 @@
  */
 package cz.seznam.euphoria.core.client.io;
 
+import cz.seznam.euphoria.core.client.util.Either;
 import java.io.IOException;
 import java.util.NoSuchElementException;
 
@@ -29,7 +30,7 @@ class EmptyReader<T> implements Reader<T> {
   }
 
   @Override
-  public T next() {
+  public Either<T, Long> next() {
     throw new NoSuchElementException();
   }
 }
