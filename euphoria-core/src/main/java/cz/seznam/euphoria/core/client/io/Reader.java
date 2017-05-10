@@ -15,13 +15,16 @@
  */
 package cz.seznam.euphoria.core.client.io;
 
+import cz.seznam.euphoria.core.client.util.Either;
 import java.io.Closeable;
 import java.util.Iterator;
 
 /**
  * Reader of data in a particular partition,
  * which essentially is merely a closable iterator.
+ * The iterator can return either data element or a timestamp that
+ * the reader is certain that has already passed.
  */
-public interface Reader<E> extends Closeable, Iterator<E> {
+public interface Reader<E> extends Closeable, Iterator<Either<E, Long>> {
 
 }
