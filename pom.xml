@@ -84,7 +84,8 @@
     <module>euphoria-core</module>
     <module>euphoria-fluent</module>
     <module>euphoria-inmem</module>
-    <module>euphoria-kafka</module>
+    <module>euphoria-kafka-client</module>
+    <module>euphoria-kafka-executor</module>
     <module>euphoria-hadoop</module>
     <module>euphoria-operator-testkit</module>
     <module>euphoria-flink</module>
@@ -310,10 +311,13 @@
             </executions>
           </plugin>
 
-          <!-- generate and attache javadoc jar -->
+          <!-- generate and attach javadoc jar -->
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-javadoc-plugin</artifactId>
+            <configuration>
+              <excludePackageNames>cz.seznam.euphoria.*.proto.*</excludePackageNames>
+            </configuration>
             <executions>
               <execution>
                 <id>attach-javadocs</id>

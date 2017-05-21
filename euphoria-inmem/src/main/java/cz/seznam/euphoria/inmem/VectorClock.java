@@ -15,28 +15,27 @@
  */
 package cz.seznam.euphoria.inmem;
 
-import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Vector clock implementation for inmem.
  */
-class VectorClock {
+public class VectorClock {
 
   final AtomicLong[] current;
 
-  VectorClock(int dimensions) {
+  public VectorClock(int dimensions) {
     current = new AtomicLong[dimensions];
     for (int i = 0; i < dimensions; i++) {
       current[i] = new AtomicLong();
     }
   }
 
-  long getCurrent() {
+  public long getCurrent() {
     return _min(current);
   }
 
-  void update(long stamp, int dimension) {
+  public void update(long stamp, int dimension) {
     current[dimension].accumulateAndGet(
         stamp, (old, update) -> old < update ? update : old);
   }
@@ -50,6 +49,13 @@ class VectorClock {
       }
     }
     return min;
+  }
+
+  /**
+   * Retrieve dimensionality of this clock.
+   */
+  public int size() {
+    return current.length;
   }
 
 }

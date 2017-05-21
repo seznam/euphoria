@@ -13,24 +13,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package cz.seznam.euphoria.core.client.dataset.windowing;
 
-import java.io.Serializable;
+package cz.seznam.euphoria.kafka.executor;
+
+import javax.annotation.Nullable;
 
 /**
- * A {@link Windowing} strategy associates each input element with a window
- * thereby grouping input elements into chunks
- * for further processing in small (micro-)batches.
- * <p>
- * Subclasses should implement {@code equals()}, {@code hashCode()} and {@code compareTo()} so that logically
- * same windows are treated the same.
+ * A callback reporting success / failure.
  */
-public abstract class Window<T extends Window<T>> implements Serializable, Comparable<T> {
+@FunctionalInterface
+interface Callback {
 
-  @Override
-  public abstract int hashCode();
-
-  @Override
-  public abstract boolean equals(Object obj);
+  void apply(boolean success, @Nullable Throwable err);
   
 }

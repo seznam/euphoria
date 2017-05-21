@@ -13,10 +13,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package cz.seznam.euphoria.inmem;
 
-interface Collector<T> {
+package cz.seznam.euphoria.kafka.executor;
 
-  void collect(T elem);
+/**
+ * A stream that can be observed by {@code StreamObserver}.
+ */
+public interface ObservableStream<T> {
+
+  /**
+   * Start to observe the stream.
+   * The observer will receive elements from all partitions assigned to this
+   * stream.
+   * @param observer the observer
+   */
+  void observe(StreamObserver<T> observer);
+
+  /**
+   * Retrieve number of partitions.
+   */
+  int size();
 
 }

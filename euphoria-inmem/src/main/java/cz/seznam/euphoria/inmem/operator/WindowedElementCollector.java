@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package cz.seznam.euphoria.inmem;
+package cz.seznam.euphoria.inmem.operator;
 
 import cz.seznam.euphoria.core.client.dataset.windowing.TimedWindow;
 import cz.seznam.euphoria.core.client.dataset.windowing.Window;
@@ -22,15 +22,22 @@ import cz.seznam.euphoria.core.client.io.Context;
 import java.util.Objects;
 import java.util.function.Supplier;
 
-class WindowedElementCollector<T> implements Context<T> {
-  private final Collector<Datum> wrap;
+public class WindowedElementCollector<T> implements Context<T> {
+
+  private final Collector<StreamElement<Object>> wrap;
   private final Supplier<Long> stampSupplier;
+  private final StreamElementFactory<Object> elementFactory;
 
   protected Window window;
 
-  WindowedElementCollector(Collector<Datum> wrap, Supplier<Long> stampSupplier) {
+  public WindowedElementCollector(
+      Collector<StreamElement<Object>> wrap,
+      Supplier<Long> stampSupplier,
+      StreamElementFactory<Object> elementFactory) {
+
     this.wrap = Objects.requireNonNull(wrap);
     this.stampSupplier = stampSupplier;
+    this.elementFactory = elementFactory;
   }
 
   @Override
@@ -44,10 +51,10 @@ class WindowedElementCollector<T> implements Context<T> {
             ? ((TimedWindow) window).maxTimestamp()
             : stampSupplier.get();
 
-    wrap.collect(Datum.of(window, elem, stamp));
+    wrap.collect(elementFactory.data(elem, window, stamp));
   }
 
-  void setWindow(Window window) {
+  public void setWindow(Window window) {
     this.window = window;
   }
 

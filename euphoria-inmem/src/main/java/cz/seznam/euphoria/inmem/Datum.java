@@ -15,8 +15,9 @@
  */
 package cz.seznam.euphoria.inmem;
 
+import cz.seznam.euphoria.inmem.operator.StreamElementFactory;
+import cz.seznam.euphoria.inmem.operator.StreamElement;
 import cz.seznam.euphoria.core.client.dataset.windowing.Window;
-import cz.seznam.euphoria.core.client.dataset.windowing.WindowedElement;
 
 /**
  * Object passed inside inmem processing pipelines.
@@ -25,7 +26,33 @@ import cz.seznam.euphoria.core.client.dataset.windowing.WindowedElement;
  *  * end-of-stream marks
  *  * watermarks
  */
-class Datum implements WindowedElement<Window, Object> {
+class Datum implements StreamElement<Object> {
+
+  static class Factory implements StreamElementFactory<Object> {
+
+    public static final Factory INSTANCE = new Factory();
+
+    @Override
+    public StreamElement<Object> data(Object element, Window window, long stamp) {
+      return Datum.of(window, element, stamp);
+    }
+
+    @Override
+    public StreamElement<Object> watermark(long stamp) {
+      return Datum.watermark(stamp);
+    }
+
+    @Override
+    public StreamElement<Object> windowTrigger(Window window, long stamp) {
+      return Datum.windowTrigger(window, stamp);
+    }
+
+    @Override
+    public StreamElement<Object> endOfStream() {
+      return Datum.endOfStream();
+    }
+
+  }
 
   private final Window window;
   private final Object element;
@@ -122,21 +149,25 @@ class Datum implements WindowedElement<Window, Object> {
   }
 
   /** Is this regular element message? */
+  @Override
   public boolean isElement() {
     return getElement() != null;
   }
 
   /** Is this end-of-stream message? */
+  @Override
   public boolean isEndOfStream() {
     return false;
   }
 
   /** Is this watermark message? */
+  @Override
   public boolean isWatermark() {
     return false;
   }
 
   /** Is this window trigger event? */
+  @Override
   public boolean isWindowTrigger() {
     return false;
   }

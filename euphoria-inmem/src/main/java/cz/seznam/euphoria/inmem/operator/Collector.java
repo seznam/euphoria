@@ -13,39 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package cz.seznam.euphoria.core.client.operator.state;
+package cz.seznam.euphoria.inmem.operator;
 
-/**
- * State storage storing lists.
- *
- * @param <T> the type of elements stored
- */
-public interface ListStorage<T> extends Storage<T> {
+public interface Collector<T> {
 
-  /**
-   * Add element to the state.
-   *
-   * @param element the element to add
-   */
-  void add(T element);
-
-  /**
-   * List all elements.
-   *
-   * @return a collection of the stored elements (in no particular order)
-   */
-  Iterable<T> get();
-
-
-  /**
-   * Add all elements.
-   *
-   * @param what elements to add
-   */
-  default void addAll(Iterable<T> what) {
-    for (T e : what) {
-      add(e);
-    }
-  }
+  void collect(T elem);
 
 }

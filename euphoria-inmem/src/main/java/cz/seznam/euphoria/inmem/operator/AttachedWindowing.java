@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package cz.seznam.euphoria.inmem;
+package cz.seznam.euphoria.inmem.operator;
 
 import cz.seznam.euphoria.core.client.dataset.windowing.Window;
 import cz.seznam.euphoria.core.client.dataset.windowing.WindowedElement;
@@ -23,7 +23,7 @@ import cz.seznam.euphoria.core.client.triggers.Trigger;
 
 import java.util.Collections;
 
-class AttachedWindowing<T, W extends Window> implements Windowing<T, W> {
+public class AttachedWindowing<T, W extends Window> implements Windowing<T, W> {
 
   static final AttachedWindowing INSTANCE = new AttachedWindowing();
 

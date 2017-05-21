@@ -1,0 +1,59 @@
+/**
+ * Copyright 2016-2017 Seznam.cz, a.s.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/**
+ * Specification of protobuffers used inside Kafka topics of the KafkaExecutor.
+ **/
+
+syntax = "proto3";
+
+package cz.seznam.euphoria.kafka.executor.proto;
+
+message Source {
+
+  /** Source partition */
+  uint32 source = 1;
+
+}
+
+message Element {
+
+  enum Type {
+
+    /** The type of this element is regular element. */
+    ELEMENT = 0;
+
+    /** Type is window trigger. */
+    WINDOW_TRIGGER = 1;
+
+    /** Type is watermark. */
+    WATERMARK = 2;
+
+    /** Type is enf-of-stream. */
+    END_OF_STREAM = 3;
+
+  }
+
+  /** Type of the element. */
+  Type type = 1;
+
+  /** Serialized window (missing means global window). */
+  bytes window = 2;
+
+  /** Serialized payload (missing if type not ELEMENT) */
+  bytes payload = 3;
+
+}

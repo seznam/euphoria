@@ -31,7 +31,7 @@
     <kafka.version>0.10.0.1</kafka.version>
   </properties>
 
-  <artifactId>euphoria-kafka_${kafka.major}</artifactId>
+  <artifactId>euphoria-kafka-client_${kafka.major}</artifactId>
   <packaging>jar</packaging>
 
   <name>${project.groupId}:${project.artifactId}</name>
@@ -86,7 +86,6 @@
     <dependency>
       <groupId>${project.groupId}</groupId>
       <artifactId>euphoria-inmem</artifactId>
-      <scope>test</scope>
     </dependency>
 
     <dependency>
@@ -114,6 +113,7 @@
       <version>2.7.0</version>
       <scope>test</scope>
     </dependency>
+
   </dependencies>
 
 </project>

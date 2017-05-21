@@ -15,6 +15,7 @@
  */
 package cz.seznam.euphoria.inmem;
 
+import cz.seznam.euphoria.inmem.operator.KeyedWindow;
 import cz.seznam.euphoria.core.client.dataset.windowing.Window;
 
 /**

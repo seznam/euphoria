@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package cz.seznam.euphoria.inmem;
+package cz.seznam.euphoria.inmem.operator;
 
 import cz.seznam.euphoria.core.client.dataset.windowing.Window;
 
@@ -23,7 +23,7 @@ public final class KeyedWindow<W extends Window, K> {
   private final W window;
   private final K key;
 
-  KeyedWindow(W window, K key) {
+  public KeyedWindow(W window, K key) {
     this.window = Objects.requireNonNull(window);
     this.key = key;
   }

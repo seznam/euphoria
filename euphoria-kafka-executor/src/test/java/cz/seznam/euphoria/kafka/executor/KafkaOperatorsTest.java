@@ -13,36 +13,37 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package cz.seznam.euphoria.flink.testkit;
+
+package cz.seznam.euphoria.kafka.executor;
 
 import cz.seznam.euphoria.core.executor.Executor;
-import cz.seznam.euphoria.flink.FlinkExecutor;
-import cz.seznam.euphoria.flink.TestFlinkExecutor;
+import cz.seznam.euphoria.operator.test.AllOperatorsSuite;
 import cz.seznam.euphoria.operator.test.junit.ExecutorEnvironment;
-import cz.seznam.euphoria.operator.test.junit.ExecutorProvider;
-import org.apache.commons.io.FileUtils;
-import org.apache.flink.contrib.streaming.state.RocksDBStateBackend;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
-import java.io.File;
-
-public interface FlinkExecutorProvider extends ExecutorProvider {
+/**
+ * Use operator test kit to test the {@code KafkaExecutor} compliance with
+ * Euphoria operators semantics.
+ */
+public class KafkaOperatorsTest extends AllOperatorsSuite {
 
   @Override
-  default ExecutorEnvironment newExecutorEnvironment() throws Exception {
-    String path = "/tmp/.flink-test-" + System.currentTimeMillis();
-    RocksDBStateBackend backend = new RocksDBStateBackend("file://" + path);
-    FlinkExecutor executor = new TestFlinkExecutor(ModuloInputSplitAssigner::new)
-        .setStateBackend(backend);
+  public ExecutorEnvironment newExecutorEnvironment() throws Exception {
     return new ExecutorEnvironment() {
+      ExecutorService service = Executors.newCachedThreadPool();
       @Override
       public Executor getExecutor() {
-        return executor;
+
+        return new TestKafkaExecutor(service);
       }
+
       @Override
       public void shutdown() throws Exception {
-        executor.shutdown();
-        FileUtils.deleteQuietly(new File(path));
+        service.shutdownNow();
       }
+
     };
   }
+
 }
