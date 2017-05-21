@@ -229,6 +229,7 @@ public class KafkaExecutor implements Executor {
     final ObservableStream<KafkaStreamElement> stream = context.get(input);
     final UnaryFunctor functor = op.getFunctor();
     final List<BlockingQueue<KafkaStreamElement>> outputs;
+    ExtractEventTime eventTimeExtractor = op.getEventTimeExtractor();
 
     outputs = Collections.synchronizedList(new ArrayList<>());
     createOutputQueues(outputs, stream.size());
@@ -253,6 +254,10 @@ public class KafkaExecutor implements Executor {
         MapContext mapContext = contexts.get(partitionId);
         BlockingQueue<KafkaStreamElement> output = outputs.get(partitionId);
         if (elem.isElement()) {
+          if (eventTimeExtractor != null) {
+            elem.reassignTimestamp(
+                eventTimeExtractor.extractTimestamp(elem.getElement()));
+          }
           mapContext.setInput(elem);
           functor.apply(elem.getElement(), mapContext);
         } else {
@@ -317,14 +322,12 @@ public class KafkaExecutor implements Executor {
             e -> e,
             partitioner, numPartitions,
             Optional.empty(),
-            Optional.empty(),
             writer));
 
     repartitioned.observe(
         receivingObserver(
             op, runningParts,
             latch, outputs,
-            Optional.empty(),
             new WatermarkEmitStrategy.Default(),
             writer::close));
 
@@ -340,7 +343,6 @@ public class KafkaExecutor implements Executor {
       CountDownLatch runningParts,
       CountDownLatch latch,
       List<BlockingQueue<KafkaStreamElement>> outputQueues,
-      Optional<ExtractEventTime> eventTimeAssigner,
       WatermarkEmitStrategy emitStrategy,
       Runnable onClose) {
 
@@ -382,10 +384,6 @@ public class KafkaExecutor implements Executor {
           if (elem.isElement() || elem.isWindowTrigger()) {
             BlockingQueue<KafkaStreamElement> output;
             output = outputQueues.get(partitionId);
-            if (elem.isElement() && eventTimeAssigner.isPresent()) {
-              elem.reassignTimestamp(
-                  eventTimeAssigner.get().extractTimestamp(elem.getElement()));
-            }
             output.put(elem);
           }
           clock.get().update(elem.getTimestamp(), partitionId);
@@ -424,7 +422,6 @@ public class KafkaExecutor implements Executor {
       UnaryFunction keyExtractor,
       Partitioner partitioner,
       int numPartitions,
-      Optional<ExtractEventTime> eventTimeAssigner,
       Optional<WatermarkEmitStrategy> emitStrategy,
       OutputWriter writer) {
 
@@ -458,9 +455,7 @@ public class KafkaExecutor implements Executor {
             watermarks.put(source, watermark = new AtomicLong());
           }
           watermarks.putIfAbsent(source, new AtomicLong());
-          long stamp = eventTimeAssigner.map(
-              assigner -> assigner.extractTimestamp(
-                  elem.getElement())).orElse(elem.getTimestamp());
+          long stamp = elem.getTimestamp();
           watermark.accumulateAndGet(stamp, (x, y) -> x < y ? y : x);
           int target = (partitioner.getPartition(
               keyExtractor.apply(elem.getElement())) & Integer.MAX_VALUE)
@@ -628,7 +623,6 @@ public class KafkaExecutor implements Executor {
     Windowing windowing = op.getWindowing();
     Partitioning partitioning = op.getPartitioning();
     Partitioner partitioner = partitioning.getPartitioner();
-    ExtractEventTime eventTimeAssigner = op.getEventTimeAssigner();
     final List<BlockingQueue<KafkaStreamElement>> outputs;
     final List<BlockingQueue<KafkaStreamElement>> repartitions;
 
@@ -658,14 +652,12 @@ public class KafkaExecutor implements Executor {
     stream.observe(sendingObserver(
             op, parts, keyExtractor, partitioner,
             numPartitions,
-            Optional.ofNullable(eventTimeAssigner),
             Optional.of(new WatermarkEmitStrategy.Default()),
             repartitionWriter));
 
     repartitioned.observe(
         receivingObserver(
             op, parts, latch, repartitions,
-            Optional.ofNullable(eventTimeAssigner),
             new WatermarkEmitStrategy.Default(),
             repartitionWriter::close));
 

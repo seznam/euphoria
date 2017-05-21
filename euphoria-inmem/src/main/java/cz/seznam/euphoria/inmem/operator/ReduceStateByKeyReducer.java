@@ -698,12 +698,15 @@ public class ReduceStateByKeyReducer implements Consumer<StreamElement<Object>> 
       // ~ make sure to avoid race-conditions with triggers from another
       // thread (i.e. processing-time-trigger-scheduler)
       synchronized (processing) {
+        if (item.isEndOfStream()) {
+          processEndOfStream(item);
+          return;
+        }
+        
         if (item.isElement()) {
           currentElementTime = item.getTimestamp();
           processing.stats.update(currentElementTime);
           processInput(item);
-        } else if (item.isEndOfStream()) {
-          processEndOfStream(item);
         } else if (item.isWatermark()) {
           processWatermark(item);
         } else if (item.isWindowTrigger()) {
@@ -839,7 +842,6 @@ public class ReduceStateByKeyReducer implements Consumer<StreamElement<Object>> 
     // close all states
     processing.flushAndCloseAllWindows();
     processing.closeOutput();
-    output.collect(eos);
   }
 
   // retrieve current watermark stamp

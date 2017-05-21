@@ -255,13 +255,13 @@ public class KafkaExecutorTest {
         Arrays.asList(1, 3, 6),
         Arrays.asList(1, 3, 6));
     ListDataSink<Pair<Integer, Integer>> sink = ListDataSink.get(2);
-    Dataset<Integer> input = flow.createInput(source);
+    Dataset<Integer> input = flow.createInput(source, a -> 2000L * a);
     ReduceByKey
         .of(input)
         .keyBy(a -> a % 2)
         .combineBy(Sums.ofInts())
         .setPartitioner(a -> a % 2)
-        .windowBy(Time.of(Duration.ofSeconds(1)), a -> 2000L * a)
+        .windowBy(Time.of(Duration.ofSeconds(1)))
         .output()
         .persist(sink);
 
@@ -281,11 +281,11 @@ public class KafkaExecutorTest {
 
     ListDataSink<Integer> sink = ListDataSink.get(2);
 
-    Distinct.of(flow.createInput(input))
+    Distinct.of(flow.createInput(input, Pair::getSecond))
         .mapped(Pair::getFirst)
         .setNumPartitions(2)
         .setPartitioner(e -> e)
-        .windowBy(Time.of(Duration.ofSeconds(1)), Pair::getSecond)
+        .windowBy(Time.of(Duration.ofSeconds(1)))
         .output()
         .persist(sink);
 

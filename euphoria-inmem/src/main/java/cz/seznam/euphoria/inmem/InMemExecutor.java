@@ -664,8 +664,7 @@ public class InMemExecutor implements Executor {
           Datum.Factory.INSTANCE);
       reducer.setup();
       executor.execute(() -> {
-        boolean run = true;
-        while (run) {
+        while (true) {
           try {
             Datum item = q.take();
             reducer.accept(item);
