@@ -36,6 +36,7 @@ public interface ListStorage<T> extends Storage<T> {
    */
   Iterable<T> get();
 
+
   /**
    * Add all elements.
    *

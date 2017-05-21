@@ -53,11 +53,13 @@ import cz.seznam.euphoria.inmem.operator.Collector;
 import cz.seznam.euphoria.inmem.operator.ReduceStateByKeyReducer;
 import cz.seznam.euphoria.inmem.operator.StreamElement;
 import cz.seznam.euphoria.kafka.executor.io.Serde.Serializer;
+import cz.seznam.euphoria.kafka.executor.io.SnapshotableStorageProvider;
 import cz.seznam.euphoria.kafka.executor.io.TopicSpec;
 import cz.seznam.euphoria.kafka.executor.proto.Serialization;
 import cz.seznam.euphoria.shaded.guava.com.google.common.annotations.VisibleForTesting;
 import cz.seznam.euphoria.shaded.guava.com.google.common.base.Joiner;
 import cz.seznam.euphoria.shaded.guava.com.google.common.collect.Iterables;
+import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -371,6 +373,14 @@ public class KafkaExecutor implements Executor {
         runningParts.countDown();
         clock.set(new VectorClock(numPartitions));
         awaitLatch(latch);
+        // send downstream command to reset the state
+        /* for (BlockingQueue<KafkaStreamElement> out : outputQueues) {
+          try {
+            out.put(KafkaStreamElement.FACTORY.rewindStateToCommitted());
+          } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+          }
+        } */
         LOG.info(
             "Started receiving part of operator {} with {} assigned partitions",
             op.getName(),
@@ -381,7 +391,7 @@ public class KafkaExecutor implements Executor {
       public void onNext(int partitionId, KafkaStreamElement elem) {
 
         try {
-          if (elem.isElement() || elem.isWindowTrigger()) {
+          if (elem.isElement() || elem.isWindowTrigger() || elem.isRewindState()) {
             BlockingQueue<KafkaStreamElement> output;
             output = outputQueues.get(partitionId);
             output.put(elem);
@@ -556,7 +566,7 @@ public class KafkaExecutor implements Executor {
         public void onNext(int partitionId, KafkaStreamElement elem) {
           BlockingQueue<KafkaStreamElement> output = outputs.get(partitionId);
           try {
-            if (elem.isElement() || elem.isWindowTrigger()) {
+            if (elem.isElement() || elem.isWindowTrigger() || elem.isRewindState()) {
               // just blindly forward to output
               output.put(elem);
             } else if (elem.isWatermark()) {
@@ -649,22 +659,13 @@ public class KafkaExecutor implements Executor {
 
     CountDownLatch parts = new CountDownLatch(3);
 
-    stream.observe(sendingObserver(
-            op, parts, keyExtractor, partitioner,
-            numPartitions,
-            Optional.of(new WatermarkEmitStrategy.Default()),
-            repartitionWriter));
-
-    repartitioned.observe(
-        receivingObserver(
-            op, parts, latch, repartitions,
-            new WatermarkEmitStrategy.Default(),
-            repartitionWriter::close));
-
-
     List<ReduceStateByKeyReducer> reducers = new ArrayList<>();
+    List<SnapshotableStorageProvider> storageProviders = new ArrayList<>();
     for (int p = 0; p < numPartitions; p++) {
       BlockingQueue<KafkaStreamElement> output = outputs.get(p);
+      // FIXME: specify storage provider
+      storageProviders.add(new SnapshotableStorageProvider(
+          new InMemStorageProvider()));
       ReduceStateByKeyReducer reducer = new ReduceStateByKeyReducer(
           op, op.getName(),
           collector(output),
@@ -678,8 +679,7 @@ public class KafkaExecutor implements Executor {
                   : new WatermarkTriggerScheduler(500)),
           // FIXME; specify watermark emit strategy
           new WatermarkEmitStrategy.Default(),
-          // FIXME: specify storage provider
-          new InMemStorageProvider(),
+          storageProviders.get(p),
           // FIXME: configurable
           false,
           KafkaStreamElement.FACTORY);
@@ -688,7 +688,21 @@ public class KafkaExecutor implements Executor {
       reducers.add(reducer);
     }
 
-    repartitionStream.observe(reduceStream(op, parts, latch, reducers));
+    stream.observe(sendingObserver(
+            op, parts, keyExtractor, partitioner,
+            numPartitions,
+            Optional.of(new WatermarkEmitStrategy.Default()),
+            repartitionWriter));
+
+    repartitioned.observe(
+        receivingObserver(
+            op, parts, latch, repartitions,
+            new WatermarkEmitStrategy.Default(),
+            repartitionWriter::close));
+
+
+    repartitionStream.observe(reduceStream(
+        op, parts, latch, reducers, outputs, storageProviders));
 
     awaitLatch(parts);
     LOG.info("Started all parts of RSBK {}", op.getName());
@@ -699,7 +713,9 @@ public class KafkaExecutor implements Executor {
       ReduceStateByKey op,
       CountDownLatch parts,
       CountDownLatch latch,
-      List<ReduceStateByKeyReducer> reducers) {
+      List<ReduceStateByKeyReducer> reducers,
+      List<BlockingQueue<KafkaStreamElement>> outputs,
+      List<SnapshotableStorageProvider> states) {
 
     return new StreamObserver<KafkaStreamElement>() {
       @Override
@@ -710,7 +726,23 @@ public class KafkaExecutor implements Executor {
       @Override
       public void onNext(int partitionId, KafkaStreamElement elem) {
         // ensure we will write the result into the correct output partition
-        reducers.get(partitionId).accept(elem);
+        if (elem.isRewindState()) {
+          LOG.info("Rewinding states to last committed version");
+          states.forEach(s -> {
+            try {
+              s.load(new File("./snapshots-" + s));
+            } catch (Exception ex) {
+              throw new RuntimeException(ex);
+            }
+          });
+          try {
+            outputs.get(partitionId).put(elem);
+          } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+          }
+        } else {
+          reducers.get(partitionId).accept(elem);
+        }
       }
 
       @Override

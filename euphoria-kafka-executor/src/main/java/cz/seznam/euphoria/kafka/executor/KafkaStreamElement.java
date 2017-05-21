@@ -50,12 +50,17 @@ class KafkaStreamElement implements StreamElement<Object> {
       return new KafkaStreamElement(null, null, Long.MAX_VALUE, Type.EOS);
     }
 
+    public KafkaStreamElement rewindStateToCommitted() {
+      return new KafkaStreamElement(null, null, -1L, Type.REWIND_STATE, -1);
+    }
+
   }
 
   private static enum Type {
     ELEMENT,
     WATERMARK,
     TRIGGER,
+    REWIND_STATE,
     EOS
   }
 
@@ -66,11 +71,6 @@ class KafkaStreamElement implements StreamElement<Object> {
   Type type;
   long stamp;
   
-  // FIXME: serialization
-  KafkaStreamElement() {
-    
-  }
-
   KafkaStreamElement(
       @Nullable Object element,
       @Nullable Window window,
@@ -113,6 +113,10 @@ class KafkaStreamElement implements StreamElement<Object> {
   @Override
   public boolean isWindowTrigger() {
     return type == Type.TRIGGER;
+  }
+
+  boolean isRewindState() {
+    return type == Type.REWIND_STATE;
   }
 
   @Override
