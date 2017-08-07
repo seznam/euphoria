@@ -15,14 +15,9 @@
  */
 package cz.seznam.euphoria.hadoop;
 
-import com.esotericsoftware.kryo.Kryo;
-import com.esotericsoftware.kryo.Serializer;
-import com.esotericsoftware.kryo.io.Input;
-import com.esotericsoftware.kryo.io.Output;
 import cz.seznam.euphoria.core.util.Settings;
 import org.apache.hadoop.conf.Configurable;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapreduce.JobContext;
 import org.apache.hadoop.mapreduce.JobID;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
@@ -30,10 +25,7 @@ import org.apache.hadoop.mapreduce.TaskAttemptID;
 import org.apache.hadoop.mapreduce.TaskType;
 import org.apache.hadoop.mapreduce.task.JobContextImpl;
 import org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl;
-import org.objenesis.strategy.StdInstantiatorStrategy;
 
-import java.io.ByteArrayOutputStream;
-import java.net.URI;
 import java.util.Map;
 
 public class HadoopUtils {
@@ -90,52 +82,5 @@ public class HadoopUtils {
             taskNumber, // task ID
             0); // task attempt
     return new TaskAttemptContextImpl(conf, taskAttemptID);
-  }
-
-  /**
-   * Serialization helper to try serializing the given object into a byte array.
-   * Deserialization is supposed to by handled via {@link #deserializeFromBytes(byte[])}.
-   *
-   * @param obj the object to be serialized
-   *
-   * @return the serialized object as a byte array; never {@code null}
-   */
-  public static byte[] serializeToBytes(Object obj) {
-    Output baos = new Output(new ByteArrayOutputStream());
-    newKryo().writeClassAndObject(baos, obj);
-    return baos.toBytes();
-  }
-
-  /**
-   * Serialization helper to deserialize the given byte array into an object
-   * assuming that was serialized using {@link #serializeToBytes(Object)}.
-   *
-   * @param data the serialized form of a object
-   *
-   * @return the object deserialized from the given data bytes
-   *
-   * @throws RuntimeException if deserialization fails for some reason
-   */
-  public static Object deserializeFromBytes(byte [] data) {
-    return newKryo().readClassAndObject(new Input(data));
-  }
-
-  static Kryo newKryo() {
-    Kryo kryo = new Kryo();
-    kryo.setInstantiatorStrategy(new StdInstantiatorStrategy());
-    kryo.addDefaultSerializer(Path.class,  KryoPathSerializer.class);
-    return kryo;
-  }
-
-  public static final class KryoPathSerializer extends Serializer<Path> {
-    @Override
-    public void write(Kryo kryo, Output output, Path object) {
-      output.writeString(object.toUri().toString());
-    }
-
-    @Override
-    public Path read(Kryo kryo, Input input, Class<Path> type) {
-      return new Path(URI.create(input.readString()));
-    }
   }
 }

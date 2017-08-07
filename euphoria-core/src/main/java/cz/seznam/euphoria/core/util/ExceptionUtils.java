@@ -13,23 +13,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package cz.seznam.euphoria.spark;
 
-public final class TimestampedElement<T> {
+package cz.seznam.euphoria.core.util;
 
-  private final long timestamp;
-  private final T el;
+public class ExceptionUtils {
 
-  public TimestampedElement(long timestamp, T el) {
-    this.timestamp = timestamp;
-    this.el = el;
+  public static <T> T unchecked(Action<T> action) {
+    try {
+      return action.perform();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException(e);
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
   }
 
-  public long getTimestamp() {
-    return timestamp;
-  }
-
-  public Object getElement() {
-    return el;
+  public interface Action<T> {
+    T perform() throws Exception;
   }
 }
