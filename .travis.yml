@@ -1,5 +1,5 @@
-sudo: false
-dist: precise
+sudo: required
+dist: trusty
 language: java
 
 jdk:
