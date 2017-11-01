@@ -19,12 +19,12 @@ import cz.seznam.euphoria.core.client.dataset.windowing.Window;
 
 import java.util.Objects;
 
-final class KeyedWindow<W extends Window, K> {
+public final class KeyedWindow<W extends Window, K> {
   private final W window;
   private final long timestamp;
   private final K key;
 
-  public KeyedWindow(W window, long timestamp, K key) {
+  KeyedWindow(W window, long timestamp, K key) {
     this.window = Objects.requireNonNull(window);
     this.timestamp = timestamp;
     this.key = key;
