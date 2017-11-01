@@ -11,7 +11,7 @@ addons:
     - oracle-java8-installer
 
 install: mvn install -DskipTests=true -Dmaven.javadoc.skip=true -B -V
-script: mvn test -B
+script: cd euphoria-flink && mvn test -B -Dtest=FlinkOperatorsTest
 
 cache:
   directories:

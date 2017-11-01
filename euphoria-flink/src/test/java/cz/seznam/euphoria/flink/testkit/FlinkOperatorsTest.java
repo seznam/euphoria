@@ -16,7 +16,10 @@
 package cz.seznam.euphoria.flink.testkit;
 
 import cz.seznam.euphoria.operator.test.AllOperatorsSuite;
+import cz.seznam.euphoria.operator.test.junit.ExecutorProviderRunner;
+import org.junit.runner.RunWith;
 
+@RunWith(ExecutorProviderRunner.class)
 public class FlinkOperatorsTest
     extends AllOperatorsSuite
     implements FlinkExecutorProvider {}
