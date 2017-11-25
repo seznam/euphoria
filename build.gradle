@@ -59,6 +59,7 @@ subprojects {
       options.compilerArgs << "-Xlint:unchecked" << "-Xlint:deprecation"
     }
   }
+
 }
 
 // ~ configure euphoria sub-projects (exluding benchmarks)
@@ -66,6 +67,14 @@ subprojects {
 configure(subprojects.findAll { !it.name.startsWith('benchmark') }) {
 
   apply plugin: 'maven-publish'
+  // relocate guava
+  apply plugin: 'com.github.johnrengelman.shadow'
+
+  dependencies {
+    // we shade guava into the final jar
+    compileOnly "com.google.guava:guava:${guavaVersion}"
+    testCompile "com.google.guava:guava:${guavaVersion}"
+  }
 
   // ~ build & publish sources and javadoc jar
 
@@ -77,6 +86,19 @@ configure(subprojects.findAll { !it.name.startsWith('benchmark') }) {
   task javadocJar(type: Jar, dependsOn: javadoc) {
     classifier = 'javadoc'
     from javadoc.destinationDir
+  }
+
+
+  shadowJar {
+    relocate 'com.google.common', 'cz.seznam.shadow.com.google.common'
+    classifier = null
+    dependencies {
+      // do not include any dependencies by default
+    }
+  }
+
+  artifacts {
+    archives shadowJar
   }
 
   publishing {
