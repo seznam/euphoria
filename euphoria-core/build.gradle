@@ -1,9 +1,10 @@
+
 configurations {
   testArtifact
 }
 
 dependencies {
-  compile "com.google.guava:guava:${guavaVersion}"
+  runtime "com.google.guava:guava:${guavaVersion}"
   compile "org.slf4j:slf4j-api:${slf4jVersion}"
 }
 
@@ -12,6 +13,11 @@ task testJar(type: Jar) {
   from sourceSets.test.output
 }
 
+shadowJar.dependencies {
+  include(dependency("com.google.guava:guava:${guavaVersion}"))
+}
+
 artifacts {
   testArtifact testJar
+  archives shadowJar
 }
