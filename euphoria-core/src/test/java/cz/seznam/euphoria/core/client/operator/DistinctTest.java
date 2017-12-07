@@ -72,4 +72,15 @@ public class DistinctTest {
     assertTrue(distinct.getWindowing() instanceof Time);
   }
 
+  // this doesn't need @Test, it just tests compilability
+  public void testWindow_applyIf() {
+    Flow flow = Flow.create("TEST");
+    Dataset<String> dataset = Util.createMockDataset(flow, 3);
+
+    Dataset<String> uniq = Distinct.of(dataset)
+        .applyIf(true, b -> b.windowBy(Time.of(Duration.ofHours(1))))
+        .output();
+
+  }
+
 }
