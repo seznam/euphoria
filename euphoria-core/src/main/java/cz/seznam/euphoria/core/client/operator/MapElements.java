@@ -24,6 +24,7 @@ import cz.seznam.euphoria.core.client.functional.UnaryFunction;
 import cz.seznam.euphoria.core.client.functional.UnaryFunctionEnv;
 import cz.seznam.euphoria.core.executor.graph.DAG;
 
+import java.util.Collections;
 import java.util.Objects;
 
 /**
@@ -135,7 +136,7 @@ public class MapElements<IN, OUT> extends ElementWiseOperator<IN, OUT> {
     return new OfBuilder(name);
   }
 
-  final UnaryFunctionEnv<IN, OUT> mapper;
+  private final UnaryFunctionEnv<IN, OUT> mapper;
 
   MapElements(String name,
               Flow flow,
@@ -162,7 +163,7 @@ public class MapElements<IN, OUT> extends ElementWiseOperator<IN, OUT> {
     return DAG.of(
         // do not use the client API here, because it modifies the Flow!
         new FlatMap<IN, OUT>(getName(), getFlow(), input,
-            (i, c) -> c.collect(mapper.apply(i, c.asContext())), null));
+            (i, c) -> c.collect(mapper.apply(i, c.asContext())), null, Collections.emptySet()));
   }
 
   public UnaryFunctionEnv<IN, OUT> getMapper() {

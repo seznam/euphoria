@@ -23,6 +23,7 @@ import cz.seznam.euphoria.core.client.flow.Flow;
 import cz.seznam.euphoria.core.client.functional.UnaryPredicate;
 import cz.seznam.euphoria.core.executor.graph.DAG;
 
+import java.util.Collections;
 import java.util.Objects;
 
 /**
@@ -127,6 +128,6 @@ public class Filter<IN> extends ElementWiseOperator<IN, IN> {
           if (predicate.apply(elem)) {
             collector.collect(elem);
           }
-        }, null));
+        }, null, Collections.emptySet()));
   }
 }

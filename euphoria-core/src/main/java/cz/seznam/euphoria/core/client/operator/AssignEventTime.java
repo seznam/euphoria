@@ -23,6 +23,7 @@ import cz.seznam.euphoria.core.client.dataset.Dataset;
 import cz.seznam.euphoria.core.client.flow.Flow;
 import cz.seznam.euphoria.core.executor.graph.DAG;
 
+import java.util.Collections;
 import java.util.Objects;
 
 /** A convenient alias for:
@@ -106,7 +107,7 @@ public class AssignEventTime<IN> extends ElementWiseOperator<IN, IN> {
   public DAG<Operator<?, ?>> getBasicOps() {
     return DAG.of(new FlatMap<>(
         getName(), getFlow(), input,
-        (i, c) -> c.collect(i), eventTimeFn));
+        (i, c) -> c.collect(i), eventTimeFn, Collections.emptySet()));
   }
 
   /**

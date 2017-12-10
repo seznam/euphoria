@@ -89,6 +89,17 @@ public class Builders {
     Dataset<T> output();
   }
 
+  public interface SideOutput<T> extends Output<T> {
+
+    /**
+     * Register side outputs with the operator.
+     *
+     * @param sideOutputs outputs to register
+     * @return output builder
+     */
+    Output<T> withSideOutputs(cz.seznam.euphoria.core.client.operator.SideOutput<?>... sideOutputs);
+  }
+
   public interface OutputWithHint<T, HINT extends Hint> extends Output<T> {
 
     /**
@@ -99,5 +110,4 @@ public class Builders {
      */
     Output<T> withHints(Set<HINT> hints);
   }
-
 }

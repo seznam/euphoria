@@ -34,9 +34,9 @@ public class FlatMapTest {
     Dataset<String> dataset = Util.createMockDataset(flow, 1);
 
     Dataset<String> mapped = FlatMap.named("FlatMap1")
-       .of(dataset)
-       .using((String s, Collector<String> c) -> c.collect(s))
-       .output();
+        .of(dataset)
+        .using((String s, Collector<String> c) -> c.collect(s))
+        .output();
 
     assertEquals(flow, mapped.getFlow());
     assertEquals(1, flow.size());
@@ -77,12 +77,12 @@ public class FlatMapTest {
     Dataset<String> dataset = Util.createMockDataset(flow, 1);
 
     Dataset<String> mapped = FlatMap.named("FlatMap1")
-            .of(dataset)
-            .using((String s, Collector<String> c) -> {
-              c.getCounter("my-counter").increment();
-              c.collect(s);
-            })
-            .output();
+        .of(dataset)
+        .using((String s, Collector<String> c) -> {
+          c.getCounter("my-counter").increment();
+          c.collect(s);
+        })
+        .output();
 
     assertEquals(flow, mapped.getFlow());
     assertEquals(1, flow.size());
@@ -99,12 +99,30 @@ public class FlatMapTest {
     Flow flow = Flow.create("TEST");
     Dataset<String> dataset = Util.createMockDataset(flow, 1);
 
-    Dataset<String> mapped = FlatMap.of(dataset)
-            .using((String s, Collector<String> c) -> c.collect(s))
-            .output();
+    FlatMap.of(dataset)
+        .using((String s, Collector<String> c) -> c.collect(s))
+        .output();
 
     FlatMap map = (FlatMap) flow.operators().iterator().next();
     assertEquals("FlatMap", map.getName());
+  }
+
+  @Test
+  public void testBuild_withSideOutputs() {
+    Flow flow = Flow.create("TEST");
+    Dataset<String> dataset = Util.createMockDataset(flow, 1);
+
+    final SideOutput<Integer> so1 = new SideOutput<>();
+    final SideOutput<Integer> so2 = new SideOutput<>();
+
+    FlatMap.of(dataset)
+        .using((String s, Collector<String> c) -> c.collect(s))
+        .withSideOutputs(so1, so2)
+        .output();
+
+    FlatMap map = (FlatMap) flow.operators().iterator().next();
+    assertEquals("FlatMap", map.getName());
+    assertEquals(2, map.getSideOutputs().size());
   }
 
 }

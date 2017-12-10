@@ -420,7 +420,7 @@ public class LocalExecutor implements Executor {
     // extract all processed sinks
     List<DataSink<?>> sinks = leafs.stream()
             .map(n -> n.get().output().getOutputSink())
-            .filter(s -> s != null)
+            .filter(Objects::nonNull)
             .collect(Collectors.toList());
 
     // wait for all threads to finish
@@ -464,7 +464,7 @@ public class LocalExecutor implements Executor {
     // consume outputs
     for (Node<Operator<?, ?>> output : leafs) {
       DataSink<?> sink = output.get().output().getOutputSink();
-      sink.initialize();
+      Objects.requireNonNull(sink).initialize();
       final InputProvider provider = context.get(output.get(), null);
       int part = 0;
       for (Supplier s : provider) {

@@ -23,9 +23,13 @@ import cz.seznam.euphoria.core.client.dataset.Dataset;
 import cz.seznam.euphoria.core.client.flow.Flow;
 import cz.seznam.euphoria.core.client.functional.UnaryFunctor;
 import cz.seznam.euphoria.core.client.io.Collector;
+import cz.seznam.euphoria.shadow.com.google.common.collect.Sets;
 
 import javax.annotation.Nullable;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * A transformation of a dataset from one type into another allowing user code
@@ -65,7 +69,7 @@ import java.util.Objects;
     state = StateComplexity.ZERO,
     repartitions = 0
 )
-public class FlatMap<IN, OUT> extends ElementWiseOperator<IN, OUT> {
+public class FlatMap<IN, OUT> extends ElementWiseOperator<IN, OUT> implements SideOutputAware {
 
   public static class OfBuilder implements Builders.Of {
     private final String name;
@@ -102,16 +106,22 @@ public class FlatMap<IN, OUT> extends ElementWiseOperator<IN, OUT> {
      *          of the {@link FlatMap} operator
      */
     public <OUT> EventTimeBuilder<IN, OUT> using(UnaryFunctor<IN, OUT> functor) {
-      return new EventTimeBuilder<>(this, functor);
+      return new EventTimeBuilder<>(name, input, functor);
     }
   }
 
-  public static class EventTimeBuilder<IN, OUT> implements Builders.Output<OUT> {
-    private final UsingBuilder<IN> using;
+  public static class EventTimeBuilder<IN, OUT> implements Builders.SideOutput<OUT> {
+
+    private final String name;
+    private final Dataset<IN> input;
     private final UnaryFunctor<IN, OUT> functor;
 
-    EventTimeBuilder(UsingBuilder<IN> using, UnaryFunctor<IN, OUT> functor) {
-      this.using = Objects.requireNonNull(using);
+    EventTimeBuilder(
+        String name,
+        Dataset<IN> input,
+        UnaryFunctor<IN, OUT> functor) {
+      this.name = name;
+      this.input = input;
       this.functor = Objects.requireNonNull(functor);
     }
 
@@ -124,31 +134,34 @@ public class FlatMap<IN, OUT> extends ElementWiseOperator<IN, OUT> {
      * @return the next builder to complete the setup
      *          of the {@link FlatMap} operator
      */
-    public OutputBuilder<IN, OUT>
-    eventTimeBy(ExtractEventTime<IN> eventTimeFn) {
-      return new OutputBuilder<>(
-          this.using.name, this.using.input, this.functor,
-          Objects.requireNonNull(eventTimeFn));
+    public SideOutputBuilder<IN, OUT> eventTimeBy(ExtractEventTime<IN> eventTimeFn) {
+      return new SideOutputBuilder<>(name, input, functor, eventTimeFn);
+    }
+
+    @Override
+    public OutputBuilder<IN, OUT> withSideOutputs(SideOutput<?>... sideOutputs) {
+      return eventTimeBy(null).withSideOutputs(sideOutputs);
     }
 
     @Override
     public Dataset<OUT> output() {
-      return new OutputBuilder<>(
-          this.using.name, this.using.input, this.functor, null).output();
+      return eventTimeBy(null).withSideOutputs().output();
     }
   }
 
-  public static class OutputBuilder<IN, OUT> implements Builders.Output<OUT> {
+  public static class SideOutputBuilder<IN, OUT> implements Builders.SideOutput<OUT> {
+
     private final String name;
     private final Dataset<IN> input;
     private final UnaryFunctor<IN, OUT> functor;
     @Nullable
     private final ExtractEventTime<IN> evtTimeFn;
 
-    OutputBuilder(String name,
-                  Dataset<IN> input,
-                  UnaryFunctor<IN, OUT> functor,
-                  @Nullable ExtractEventTime<IN> evtTimeFn) {
+    SideOutputBuilder(
+        String name,
+        Dataset<IN> input,
+        UnaryFunctor<IN, OUT> functor,
+        @Nullable ExtractEventTime<IN> evtTimeFn) {
       this.name = name;
       this.input = input;
       this.functor = functor;
@@ -156,12 +169,47 @@ public class FlatMap<IN, OUT> extends ElementWiseOperator<IN, OUT> {
     }
 
     @Override
+    public OutputBuilder<IN, OUT> withSideOutputs(SideOutput<?>... sideOutputs) {
+      return new OutputBuilder<>(name, input, functor, evtTimeFn, Sets.newHashSet(sideOutputs));
+    }
+
+    @Override
     public Dataset<OUT> output() {
-      Flow flow = input.getFlow();
-      FlatMap<IN, OUT> map = new FlatMap<>(name, flow, input, functor, evtTimeFn);
+      return withSideOutputs().output();
+    }
+  }
+
+  public static class OutputBuilder<IN, OUT> implements Builders.Output<OUT> {
+
+    private final String name;
+    private final Dataset<IN> input;
+    private final UnaryFunctor<IN, OUT> functor;
+    @Nullable
+    private final ExtractEventTime<IN> evtTimeFn;
+    private final Set<SideOutput<?>> sideOutputs;
+
+    OutputBuilder(
+        String name,
+        Dataset<IN> input,
+        UnaryFunctor<IN, OUT> functor,
+        @Nullable ExtractEventTime<IN> evtTimeFn,
+        Set<SideOutput<?>> sideOutputs) {
+      this.name = Objects.requireNonNull(name);
+      this.input = Objects.requireNonNull(input);
+      this.functor = Objects.requireNonNull(functor);
+      this.evtTimeFn = evtTimeFn;
+      this.sideOutputs = Objects.requireNonNull(sideOutputs);
+    }
+
+    @Override
+    public Dataset<OUT> output() {
+      final Flow flow = input.getFlow();
+      final FlatMap<IN, OUT> map = new FlatMap<>(
+          name, flow, input, functor, evtTimeFn, sideOutputs);
       flow.add(map);
       return map.output();
     }
+
   }
 
   /**
@@ -194,13 +242,19 @@ public class FlatMap<IN, OUT> extends ElementWiseOperator<IN, OUT> {
 
   private final UnaryFunctor<IN, OUT> functor;
   private final ExtractEventTime<IN> eventTimeFn;
+  private final Set<SideOutput<?>> sideOutputs;
 
-  FlatMap(String name, Flow flow, Dataset<IN> input,
-          UnaryFunctor<IN, OUT> functor,
-          @Nullable ExtractEventTime<IN> evtTimeFn) {
+  FlatMap(
+      String name,
+      Flow flow,
+      Dataset<IN> input,
+      UnaryFunctor<IN, OUT> functor,
+      @Nullable ExtractEventTime<IN> evtTimeFn,
+      Set<SideOutput<?>> sideOutputs) {
     super(name, flow, input);
-    this.functor = functor;
+    this.functor = Objects.requireNonNull(functor);
     this.eventTimeFn = evtTimeFn;
+    this.sideOutputs = Objects.requireNonNull(sideOutputs);
   }
 
   /**
@@ -222,5 +276,10 @@ public class FlatMap<IN, OUT> extends ElementWiseOperator<IN, OUT> {
   @Nullable
   public ExtractEventTime<IN> getEventTimeExtractor() {
     return eventTimeFn;
+  }
+
+  @Override
+  public Set<SideOutput<?>> getSideOutputs() {
+    return sideOutputs;
   }
 }

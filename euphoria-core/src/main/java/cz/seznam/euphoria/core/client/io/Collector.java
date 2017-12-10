@@ -16,6 +16,7 @@
 package cz.seznam.euphoria.core.client.io;
 
 import cz.seznam.euphoria.core.annotation.audience.Audience;
+import cz.seznam.euphoria.core.client.operator.SideOutput;
 
 /**
  * Extends {@link Environment} with write capability. Used in
@@ -32,6 +33,17 @@ public interface Collector<T> extends Environment {
    * @param elem the element to collect
    */
   void collect(T elem);
+
+  /**
+   * Collects the given element to the side output of this context.
+   *
+   * @param sideOutput output to collect element to
+   * @param elem the element to collect
+   */
+  default <OUT> void collect(SideOutput<OUT> sideOutput, OUT elem) {
+    throw new UnsupportedOperationException("Side outputs are not supported with this collector.");
+  }
+
 
   /**
    * Returns {@link Context} view of the collector.
