@@ -78,4 +78,16 @@ public class CountByKeyTest {
     assertTrue(count.getWindowing() instanceof Time);
   }
 
+  // this doesn't need @Test, it just tests compilability
+  public void testWindow_applyIf() {
+    Flow flow = Flow.create("TEST");
+    Dataset<String> dataset = Util.createMockDataset(flow, 3);
+
+    Dataset<Pair<String, Long>> output = CountByKey.named("CountByKey1")
+        .of(dataset)
+        .keyBy(s -> s)
+        .applyIf(true, b -> b.windowBy(Time.of(Duration.ofHours(1))))
+        .output();
+  }
+
 }

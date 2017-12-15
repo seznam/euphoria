@@ -89,6 +89,18 @@ public class ReduceWindowTest {
     assertNotNull(producer.valueComparator);
   }
 
+  // this doesn't need @Test, it just tests compilability
+  public void testWindow_applyIf() {
+    Flow flow = Flow.create("TEST");
+    Dataset<String> dataset = Util.createMockDataset(flow, 2);
+    Windowing<String, ?> windowing = Time.of(Duration.ofHours(1));
+
+    Dataset<Long> output = ReduceWindow.of(dataset)
+        .reduceBy(e -> 1L)
+        .withSortedValues((l, r) -> l.compareTo(r))
+        .applyIf(true, b -> b.windowBy(windowing))
+        .output();
+  }
 
   private <IN, OUT> OUT collectSingle(
       ReduceFunctor<IN, OUT> fn, Stream<IN> values) {
