@@ -87,10 +87,17 @@ class ReduceStateByKeyTranslator implements SparkOperatorTranslator<ReduceStateB
             comparator);
 
     // ~ iterate through the sorted partition and incrementally reduce states
-    return sorted.mapPartitions(
+    final JavaRDD<?> result = sorted.mapPartitions(
             new StateReducer(windowing, stateFactory, stateCombiner,
                     new SparkStateContext(settings, SparkEnv.get().serializer(), listStorageMaxElements),
                     new LazyAccumulatorProvider(context.getAccumulatorFactory(), context.getSettings())));
+
+    // ~ cache result if hinted to
+    if (operator.getHints().contains(GenericHints.cacheResult())) {
+      return result.cache();
+    }
+
+    return result;
   }
 
   /**

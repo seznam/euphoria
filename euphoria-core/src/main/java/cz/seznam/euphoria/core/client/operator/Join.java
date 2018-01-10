@@ -40,6 +40,7 @@ import javax.annotation.Nullable;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 
@@ -583,6 +584,13 @@ public class Join<LEFT, RIGHT, KEY, OUT, W extends Window>
         new Union<>(getName() + "::Union", flow, Arrays.asList(
             leftMap.output(), rightMap.output()));
 
+    final Set<ReduceStateByKeyHint> rsbkHints = new HashSet<>();
+    for (Hint hint : hints) {
+      if (hint instanceof ReduceStateByKeyHint) {
+        rsbkHints.add((ReduceStateByKeyHint) hint);
+      }
+    }
+
     final ReduceStateByKey<Either<LEFT, RIGHT>, KEY, Either<LEFT, RIGHT>, OUT, StableJoinState, W>
         reduce = new ReduceStateByKey(
         getName() + "::ReduceStateByKey",
@@ -596,7 +604,8 @@ public class Join<LEFT, RIGHT, KEY, OUT, W extends Window>
           return ctx == null
               ? new StableJoinState(storages)
               : new EarlyEmittingJoinState(storages, ctx);
-        }, new StateSupport.MergeFromStateMerger<>());
+        }, new StateSupport.MergeFromStateMerger<>(),
+        rsbkHints);
 
     final DAG<Operator<?, ?>> dag = DAG.of(leftMap, rightMap);
     dag.add(union, leftMap, rightMap);
