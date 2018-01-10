@@ -15,17 +15,29 @@
  */
 package cz.seznam.euphoria.spark;
 
+import cz.seznam.euphoria.core.annotation.audience.Audience;
 import cz.seznam.euphoria.core.client.operator.JoinHint;
 import cz.seznam.euphoria.core.client.operator.ReduceStateByKeyHint;
 
+/**
+ * Spark hints related more than one operator
+ */
+@Audience(Audience.Type.CLIENT)
 public class GenericHints {
 
   private static final CacheResult CACHE_RESULT = new CacheResult();
 
+  /**
+   * Caches result of the hinted operator.
+   * @return hint
+   */
   public static CacheResult cacheResult() {
     return CACHE_RESULT;
   }
 
+  /**
+   * Caches result of the hinted operator.
+   */
   public static class CacheResult implements JoinHint, ReduceStateByKeyHint {
 
     private CacheResult() {

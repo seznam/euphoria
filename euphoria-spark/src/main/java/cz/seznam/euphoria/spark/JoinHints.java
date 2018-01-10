@@ -18,11 +18,19 @@ package cz.seznam.euphoria.spark;
 import cz.seznam.euphoria.core.annotation.audience.Audience;
 import cz.seznam.euphoria.core.client.operator.JoinHint;
 
+/**
+ * Spark hints related to {@link cz.seznam.euphoria.core.client.operator.Join} operator
+ */
 @Audience(Audience.Type.CLIENT)
 public class JoinHints {
 
   private static final BroadcastHashJoin BROADCAST_HASH_JOIN = new BroadcastHashJoin();
 
+  /**
+   * Broadcasts optional join side to all executors. See {@link BroadcastHashJoinTranslator}
+   * for more details.
+   * @return hint
+   */
   public static BroadcastHashJoin broadcastHashJoin() {
     return BROADCAST_HASH_JOIN;
   }
