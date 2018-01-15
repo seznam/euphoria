@@ -9,7 +9,7 @@ plugins {
 allprojects {
   apply plugin: 'idea'
   group = 'cz.seznam.euphoria'
-  version = '0.8-SNAPSHOT'
+  version = '0.8.0'
 }
 
 subprojects {
@@ -90,6 +90,17 @@ configure(subprojects.findAll { it.name.startsWith('euphoria') }) {
         from components.java
         artifact sourcesJar
         artifact javadocJar
+      }
+    }
+  }
+  publishing {
+    repositories {
+      maven {
+        url 'https://oss.sonatype.org/service/local/staging/deploy/maven2'
+        credentials {
+          username "${nexusUser}"
+          password "${nexusPassword}"
+        }
       }
     }
   }
