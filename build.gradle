@@ -65,7 +65,14 @@ subprojects {
 
 configure(subprojects.findAll { it.name.startsWith('euphoria') }) {
 
+  apply plugin: 'maven'
   apply plugin: 'maven-publish'
+  apply plugin: 'signing'
+
+  sourceSets {
+    test.compileClasspath += configurations.compileOnly
+    test.runtimeClasspath += configurations.compileOnly
+  }
 
   // ~ build & publish sources and javadoc jar
 
@@ -76,12 +83,15 @@ configure(subprojects.findAll { it.name.startsWith('euphoria') }) {
 
   task javadocJar(type: Jar, dependsOn: javadoc) {
     classifier = 'javadoc'
-    from javadoc.destinationDir
+    from javadoc
   }
 
-  sourceSets {
-    test.compileClasspath += configurations.compileOnly
-    test.runtimeClasspath += configurations.compileOnly
+  artifacts {
+    archives javadocJar, sourcesJar
+  }
+
+  signing {
+    sign configurations.archives
   }
 
   publishing {
@@ -93,15 +103,39 @@ configure(subprojects.findAll { it.name.startsWith('euphoria') }) {
       }
     }
   }
-  publishing {
+
+  uploadArchives {
     repositories {
-      maven {
-        url 'https://oss.sonatype.org/service/local/staging/deploy/maven2'
-        credentials {
-          username "${nexusUser}"
-          password "${nexusPassword}"
+      mavenDeployer {
+        beforeDeployment { signing.signPom(it) }
+
+        repository(url: "https://oss.sonatype.org/service/local/staging/deploy/maven2/") {
+          authentication(userName: nexusUser, password: nexusPassword)
+        }
+
+        snapshotRepository(url: "https://oss.sonatype.org/content/repositories/snapshots/") {
+          authentication(userName: nexusUser, password: nexusPassword)
+        }
+
+        pom.project {
+          packaging 'jar'
+          url 'https://github.com/seznam/euphoria/'
+
+          scm {
+            connection 'scm:git:https://github.com/seznam/euphoria.git'
+            developerConnection 'scm:git:https://github.com/seznam/euphoria.git'
+            url 'https://github.com/seznam/euphoria/'
+          }
+
+          licenses {
+            license {
+              name 'The Apache License, Version 2.0'
+              url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+            }
+          }
         }
       }
     }
   }
+ 
 }
