@@ -1,5 +1,6 @@
 import com.github.spotbugs.SpotBugsTask
 
+
 plugins {
   id "com.github.hierynomus.license" version "0.14.0" apply false
   id 'com.github.johnrengelman.shadow' version '2.0.1' apply false
@@ -104,63 +105,64 @@ configure(subprojects.findAll { it.name.startsWith('euphoria') }) {
     }
   }
 
-  uploadArchives {
-    repositories {
-      mavenDeployer {
-        def artifact = it.name
-        beforeDeployment { signing.signPom(it) }
+  if (project.hasProperty("nexusUser")) {
+    uploadArchives {
+      repositories {
+        mavenDeployer {
+          def artifact = it.name
+          beforeDeployment { signing.signPom(it) }
 
-        repository(url: "https://oss.sonatype.org/service/local/staging/deploy/maven2/") {
-          authentication(userName: nexusUser, password: nexusPassword)
-        }
+          repository(url: "https://oss.sonatype.org/service/local/staging/deploy/maven2/") {
+            authentication(userName: project.properties["nexusUser"] ?: "null", password: project.properties["nexusPassword"] ?: "null")
+          }
 
-        snapshotRepository(url: "https://oss.sonatype.org/content/repositories/snapshots/") {
-          authentication(userName: nexusUser, password: nexusPassword)
-        }
+          snapshotRepository(url: "https://oss.sonatype.org/content/repositories/snapshots/") {
+            authentication(userName: project.properties["nexusUser"] ?: "null", password: project.properties["nexusPassword"] ?: "null")
+          }
 
-        pom.project {
-          packaging 'jar'
-          url 'https://github.com/seznam/euphoria/'
-
-          scm {
-            connection 'scm:git:https://github.com/seznam/euphoria.git'
-            developerConnection 'scm:git:https://github.com/seznam/euphoria.git'
+          pom.project {
+            packaging 'jar'
             url 'https://github.com/seznam/euphoria/'
-          }
 
-          licenses {
-            license {
-              name 'The Apache License, Version 2.0'
-              url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+            scm {
+              connection 'scm:git:https://github.com/seznam/euphoria.git'
+              developerConnection 'scm:git:https://github.com/seznam/euphoria.git'
+              url 'https://github.com/seznam/euphoria/'
             }
-          }
 
-          name "${group}:${artifact}"
-          description """A Java API for creating unified big-data processing flows providing an
+            licenses {
+              license {
+                name 'The Apache License, Version 2.0'
+                url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+              }
+            }
+
+            name "${group}:${artifact}"
+            description """A Java API for creating unified big-data processing flows providing an
 engine independent programming model which can express both batch and
 stream transformations."""
-          organization {
-            name 'Seznam.cz, a.s.'
-            url 'https://www.seznam.cz'
-          }
-
-          developers {
-            developer {
-              id 'je-ik'
-              name 'Jan Lukavsky'
-              email 'je.ik@seznam.cz'
+            organization {
+              name 'Seznam.cz, a.s.'
+              url 'https://www.seznam.cz'
             }
-            developer {
-              id 'dmvk'
-              name 'David Moravek'
-              email 'david.moravek@firma.seznam.cz'
-              organization 'Seznam.cz'
-              organizationUrl 'https://www.seznam.cz'
+
+            developers {
+              developer {
+                id 'je-ik'
+                name 'Jan Lukavsky'
+                email 'je.ik@seznam.cz'
+              }
+              developer {
+                id 'dmvk'
+                name 'David Moravek'
+                email 'david.moravek@firma.seznam.cz'
+                organization 'Seznam.cz'
+                organizationUrl 'https://www.seznam.cz'
+              }
             }
           }
         }
       }
     }
   }
- 
 }
