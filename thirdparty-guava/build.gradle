@@ -21,9 +21,11 @@ jar.enabled = false
 
 shadowJar {
   relocate 'com.google.common', 'cz.seznam.euphoria.shadow.com.google.common'
+  relocate 'com.google.thirdparty', 'cz.seznam.euphoria.shadow.com.google.thirdparty'
+  classifier = null
 }
 
-build.dependsOn shadowJar
+jar.dependsOn shadowJar
 
 publishing {
   publications {
