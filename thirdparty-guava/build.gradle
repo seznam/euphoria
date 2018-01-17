@@ -25,7 +25,7 @@ shadowJar {
   classifier = null
 }
 
-build.dependsOn shadowJar
+jar.dependsOn shadowJar
 
 publishing {
   publications {
