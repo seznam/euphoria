@@ -9,7 +9,7 @@ plugins {
 allprojects {
   apply plugin: 'idea'
   group = 'cz.seznam.euphoria'
-  version = '0.8-SNAPSHOT'
+  version = '0.8.0'
 }
 
 subprojects {
@@ -63,20 +63,42 @@ subprojects {
 
 // ~ configure euphoria sub-projects (excluding benchmarks and guava)
 
-configure(subprojects.findAll { it.name.startsWith('euphoria') }) {
+configure(subprojects.findAll { it.name.matches(/^(euphoria|thirdparty).+$/) }) {
 
   apply plugin: 'maven-publish'
+  apply plugin: 'signing'
 
-  // ~ build & publish sources and javadoc jar
+  if (it.name.startsWith("euphoria")) {
 
-  task sourcesJar(type: Jar, dependsOn: classes) {
-    classifier = 'sources'
-    from sourceSets.main.allSource
+    // ~ build & publish sources and javadoc jar
+
+    task sourcesJar(type: Jar, dependsOn: classes) {
+      classifier = 'sources'
+      from sourceSets.main.allSource
+    }
+
+    task javadocJar(type: Jar, dependsOn: javadoc) {
+      classifier = 'javadoc'
+      from javadoc.destinationDir
+    }
+
+    artifacts {
+      archives sourcesJar
+      archives javadocJar
+    }
+
+  } else {
+
+    jar.enabled = false
+    configurations.archives.artifacts.with { archives ->
+      archives.each {
+        archives.remove(it)
+      }
+    }
   }
 
-  task javadocJar(type: Jar, dependsOn: javadoc) {
-    classifier = 'javadoc'
-    from javadoc.destinationDir
+  signing {
+    sign configurations.archives
   }
 
   sourceSets {
@@ -85,12 +107,144 @@ configure(subprojects.findAll { it.name.startsWith('euphoria') }) {
   }
 
   publishing {
+
     publications {
+
       mavenJava(MavenPublication) {
+
+        groupId 'cz.seznam.euphoria'
+        artifactId project.name
+        version '0.8.0'
+        customizePom(pom, "${groupId}:${artifactId}")
+
         from components.java
-        artifact sourcesJar
-        artifact javadocJar
+
+        // create the sign pom artifact
+
+        pom.withXml {
+          def pomFile = file("${project.buildDir}/generated-pom.xml")
+          writeTo(pomFile)
+          def pomAscFile = signing.sign(pomFile).signatureFiles[0]
+          artifact(pomAscFile) {
+            classifier = null
+            extension = 'pom.asc'
+          }
+        }
+
+        artifacts = []
+
+        if (it.name.startsWith("euphoria")) {
+
+          artifact(sourcesJar) {
+            classifier = 'sources'
+          }
+
+          artifact(javadocJar) {
+            classifier = 'javadoc'
+          }
+
+        }
+
+        // create the signed artifacts
+        project.tasks.signArchives.signatureFiles.each {
+          artifact(it) {
+            def matcher = it.file =~ /-(sources|javadoc)\.jar\.asc$/
+            if (matcher.find()) {
+              classifier = matcher.group(1)
+            } else {
+              classifier = null
+            }
+            extension = 'jar.asc'
+          }
+        }
+      }
+    }
+    repositories {
+      maven {
+        url "https://oss.sonatype.org/service/local/staging/deploy/maven2"
+        credentials {
+          username sonatypeUsername
+          password sonatypePassword
+        }
+      }
+    }
+  }
+
+  model {
+
+    tasks.generatePomFileForMavenJavaPublication {
+      destination = file("$buildDir/generated-pom.xml")
+    }
+
+    tasks.publishMavenJavaPublicationToMavenLocal {
+      dependsOn project.tasks.signArchives
+    }
+
+    tasks.publishMavenJavaPublicationToMavenRepository {
+      dependsOn project.tasks.signArchives
+    }
+  }
+}
+
+def customizePom(pom, pomName) {
+
+  pom.withXml {
+
+    def root = asNode()
+
+    // eliminate test-scoped dependencies (no need in maven central POMs)
+    root.dependencies.removeAll { dep ->
+      dep.scope == "test"
+    }
+
+    // add all items necessary for maven central publication
+    root.children().last() + {
+
+      resolveStrategy = Closure.DELEGATE_FIRST
+
+      scm {
+        connection 'scm:git:https://github.com/seznam/euphoria.git'
+        developerConnection 'scm:git:https://github.com/seznam/euphoria.git'
+        url 'https://github.com/seznam/euphoria/'
+      }
+ 
+      licenses {
+        license {
+          name 'The Apache License, Version 2.0'
+          url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+        }
+      }
+ 
+      name "${pomName}"
+      description """A Java API for creating unified big-data processing flows providing an
+engine independent programming model which can express both batch and
+stream transformations."""
+      organization {
+        name 'Seznam.cz, a.s.'
+        url 'https://www.seznam.cz'
+      }
+ 
+      developers {
+        developer {
+          id 'je-ik'
+          name 'Jan Lukavsky'
+          email 'je.ik@seznam.cz'
+        }
+        developer {
+          id 'dmvk'
+          name 'David Moravek'
+          email 'david.moravek@firma.seznam.cz'
+          organization 'Seznam.cz'
+          organizationUrl 'https://www.seznam.cz'
+        }
+      }
+
+      issueManagement {
+        system 'GitHub'
+        url 'https://github.com/mautini/schemaorg-java/issues'
       }
     }
   }
 }
+
+

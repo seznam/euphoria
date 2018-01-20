@@ -7,6 +7,8 @@ dependencies {
 
 // ~ remove default archives
 
+println "cleaning artifacts"
+
 configurations.runtime.artifacts.with { archives ->
   archives.each {
     archives.remove(it)
@@ -23,6 +25,10 @@ shadowJar {
   relocate 'com.google.common', 'cz.seznam.euphoria.shadow.com.google.common'
   relocate 'com.google.thirdparty', 'cz.seznam.euphoria.shadow.com.google.thirdparty'
   configurations = [project.configurations.compileOnly]
+}
+
+artifacts {
+  archives shadowJar
 }
 
 jar.dependsOn shadowJar
