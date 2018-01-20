@@ -90,17 +90,12 @@ configure(subprojects.findAll { it.name.matches(/^(euphoria|thirdparty).+$/) }) 
   } else {
 
     jar.enabled = false
-    println "cleeeeeeeeeeafsdadsfas"
     configurations.archives.artifacts.with { archives ->
       archives.each {
         archives.remove(it)
       }
     }
   }
-
-  println "Setting up.... ${project.name}"
-
-  configurations.archives.artifacts.each { println it }
 
   signing {
     sign configurations.archives
@@ -117,10 +112,10 @@ configure(subprojects.findAll { it.name.matches(/^(euphoria|thirdparty).+$/) }) 
 
       mavenJava(MavenPublication) {
 
-        customizePom(pom)
         groupId 'cz.seznam.euphoria'
         artifactId project.name
         version '0.8.0'
+        customizePom(pom, "${groupId}:${artifactId}")
 
         from components.java
 
@@ -149,8 +144,6 @@ configure(subprojects.findAll { it.name.matches(/^(euphoria|thirdparty).+$/) }) 
           }
 
         }
-
-        artifacts.each { println it.toString() }
 
         // create the signed artifacts
         project.tasks.signArchives.signatureFiles.each {
@@ -193,7 +186,7 @@ configure(subprojects.findAll { it.name.matches(/^(euphoria|thirdparty).+$/) }) 
   }
 }
 
-def customizePom(pom) {
+def customizePom(pom, pomName) {
 
   pom.withXml {
 
@@ -206,35 +199,49 @@ def customizePom(pom) {
 
     // add all items necessary for maven central publication
     root.children().last() + {
+
       resolveStrategy = Closure.DELEGATE_FIRST
 
-      description 'AAAA'
-      name 'Schema.org Java'
-      url 'https://github.com/mautini/schemaorg-java'
-      organization {
-        name 'com.github.mautini'
-        url 'https://github.com/mautini'
+      scm {
+        connection 'scm:git:https://github.com/seznam/euphoria.git'
+        developerConnection 'scm:git:https://github.com/seznam/euphoria.git'
+        url 'https://github.com/seznam/euphoria/'
       }
+ 
+      licenses {
+        license {
+          name 'The Apache License, Version 2.0'
+          url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+        }
+      }
+ 
+      name "${pomName}"
+      description """A Java API for creating unified big-data processing flows providing an
+engine independent programming model which can express both batch and
+stream transformations."""
+      organization {
+        name 'Seznam.cz, a.s.'
+        url 'https://www.seznam.cz'
+      }
+ 
+      developers {
+        developer {
+          id 'je-ik'
+          name 'Jan Lukavsky'
+          email 'je.ik@seznam.cz'
+        }
+        developer {
+          id 'dmvk'
+          name 'David Moravek'
+          email 'david.moravek@firma.seznam.cz'
+          organization 'Seznam.cz'
+          organizationUrl 'https://www.seznam.cz'
+        }
+      }
+
       issueManagement {
         system 'GitHub'
         url 'https://github.com/mautini/schemaorg-java/issues'
-      }
-      licenses {
-        license {
-          name 'Apache License 2.0'
-          url 'https://github.com/mautini/schemaorg-java/blob/master/LICENSE'
-          distribution 'repo'
-        }
-      }
-      scm {
-        url 'https://github.com/mautini/schemaorg-java'
-        connection 'scm:git:git://github.com/mautini/schemaorg-java.git'
-        developerConnection 'scm:git:ssh://git@github.com:mautini/schemaorg-java.git'
-      }
-      developers {
-        developer {
-          name 'Mautini'
-        }
       }
     }
   }
