@@ -29,7 +29,9 @@ import cz.seznam.euphoria.core.client.operator.state.StateMerger;
 import cz.seznam.euphoria.core.client.util.Pair;
 
 import javax.annotation.Nullable;
+import java.util.Collections;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * A {@link ReduceStateByKey} operator is a stateful, complex, lower-level-api,
@@ -101,6 +103,7 @@ public class ReduceStateByKey<
     IN, KEY, VALUE, OUT, STATE extends State<VALUE, OUT>, W extends Window>
     extends StateAwareWindowWiseSingleInputOperator<
         IN, IN, IN, KEY, Pair<KEY, OUT>, W, ReduceStateByKey<IN, KEY, VALUE, OUT, STATE, W>>
+  implements HintAware<ReduceStateByKeyHint>
 {
 
   public static class OfBuilder implements Builders.Of {
@@ -309,7 +312,7 @@ public class ReduceStateByKey<
       ReduceStateByKey<IN, KEY, VALUE, OUT, STATE, W>
           reduceStateByKey =
           new ReduceStateByKey<>(name, flow, input, keyExtractor, valueExtractor,
-              windowing, stateFactory, stateMerger);
+              windowing, stateFactory, stateMerger, Collections.emptySet());
       flow.add(reduceStateByKey);
 
       return reduceStateByKey.output();
@@ -347,6 +350,7 @@ public class ReduceStateByKey<
   private final StateFactory<VALUE, OUT, STATE> stateFactory;
   private final UnaryFunction<IN, VALUE> valueExtractor;
   private final StateMerger<VALUE, OUT, STATE> stateCombiner;
+  private final Set<ReduceStateByKeyHint> hints;
 
   ReduceStateByKey(String name,
                    Flow flow,
@@ -355,12 +359,14 @@ public class ReduceStateByKey<
                    UnaryFunction<IN, VALUE> valueExtractor,
                    @Nullable Windowing<IN, W> windowing,
                    StateFactory<VALUE, OUT, STATE> stateFactory,
-                   StateMerger<VALUE, OUT, STATE> stateMerger)
+                   StateMerger<VALUE, OUT, STATE> stateMerger,
+                   Set<ReduceStateByKeyHint> hints)
   {
     super(name, flow, input, keyExtractor, windowing);
     this.stateFactory = stateFactory;
     this.valueExtractor = valueExtractor;
     this.stateCombiner = stateMerger;
+    this.hints = hints;
   }
 
   /**
@@ -388,5 +394,10 @@ public class ReduceStateByKey<
    */
   public UnaryFunction<IN, VALUE> getValueExtractor() {
     return valueExtractor;
+  }
+
+  @Override
+  public Set<ReduceStateByKeyHint> getHints() {
+    return hints;
   }
 }

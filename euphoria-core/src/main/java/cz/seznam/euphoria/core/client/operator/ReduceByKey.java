@@ -43,6 +43,7 @@ import cz.seznam.euphoria.core.client.util.Pair;
 import cz.seznam.euphoria.core.executor.util.SingleValueContext;
 
 import javax.annotation.Nullable;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Objects;
 import java.util.stream.Stream;
@@ -438,7 +439,7 @@ public class ReduceByKey<IN, KEY, VALUE, OUT, W extends Window>
     Operator reduceState = new ReduceStateByKey(getName(),
         flow, input, keyExtractor, valueExtractor,
         windowing,
-        stateFactory, stateCombine);
+        stateFactory, stateCombine, Collections.emptySet());
     return DAG.of(reduceState);
   }
 

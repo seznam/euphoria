@@ -131,7 +131,7 @@ public class BroadcastHashJoinTranslator implements SparkOperatorTranslator<Join
       }
     }
 
-    return joined.flatMap(new FlatMapFunctionWithCollector<>((t, collector) -> {
+    final JavaRDD<?> result = joined.flatMap(new FlatMapFunctionWithCollector<>((t, collector) -> {
       // ~ both elements have exactly the same window
       // ~ we need to check for null values because we support both Left and Right joins
       final SparkElement first = t._2._1.orNull();
@@ -149,6 +149,13 @@ public class BroadcastHashJoinTranslator implements SparkOperatorTranslator<Join
       return Iterators.transform(collector.getOutputIterator(), e ->
           new SparkElement<>(window, maxTimestamp, Pair.of(t._1.key(), e)));
     }, new LazyAccumulatorProvider(context.getAccumulatorFactory(), context.getSettings())));
+
+    // ~ cache result if hinted to
+    if (operator.getHints().contains(GenericHints.cacheResult())) {
+      return result.cache();
+    }
+
+    return result;
   }
 
   private static <T> Optional<T> opt(T val) {

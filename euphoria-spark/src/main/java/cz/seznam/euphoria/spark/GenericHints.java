@@ -17,33 +17,31 @@ package cz.seznam.euphoria.spark;
 
 import cz.seznam.euphoria.core.annotation.audience.Audience;
 import cz.seznam.euphoria.core.client.operator.JoinHint;
+import cz.seznam.euphoria.core.client.operator.ReduceStateByKeyHint;
 
 /**
- * Spark hints related to {@link cz.seznam.euphoria.core.client.operator.Join} operator
+ * Spark hints related more than one operator
  */
 @Audience(Audience.Type.CLIENT)
-public class JoinHints {
+public class GenericHints {
 
-  private static final BroadcastHashJoin BROADCAST_HASH_JOIN = new BroadcastHashJoin();
+  private static final CacheResult CACHE_RESULT = new CacheResult();
 
   /**
-   * Broadcasts optional join side to all executors. See {@link BroadcastHashJoinTranslator}
-   * for more details.
+   * Caches result of the hinted operator.
    * @return hint
    */
-  public static BroadcastHashJoin broadcastHashJoin() {
-    return BROADCAST_HASH_JOIN;
+  public static CacheResult cacheResult() {
+    return CACHE_RESULT;
   }
 
   /**
-   * Broadcasts optional join side to all executors. See {@link BroadcastHashJoinTranslator}
-   * for more details.
+   * Caches result of the hinted operator.
    */
-  public static class BroadcastHashJoin implements JoinHint {
+  public static class CacheResult implements JoinHint, ReduceStateByKeyHint {
 
-    private BroadcastHashJoin() {
+    private CacheResult() {
 
     }
   }
-
 }
