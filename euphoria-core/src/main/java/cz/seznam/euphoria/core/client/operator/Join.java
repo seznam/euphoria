@@ -191,7 +191,7 @@ public class Join<LEFT, RIGHT, KEY, OUT, W extends Window<W>>
     }
 
     @Override
-    public OutputBuilder<LEFT, RIGHT, KEY, OUT, Window> withHints(Set<JoinHint> hints) {
+    public OutputBuilder<LEFT, RIGHT, KEY, OUT, ?> withHints(Set<JoinHint> hints) {
       return windowBy(null).withHints(hints);
     }
 
@@ -202,7 +202,7 @@ public class Join<LEFT, RIGHT, KEY, OUT, W extends Window<W>>
     }
   }
 
-  public static class HintBuilderOutput<LEFT, RIGHT, KEY, OUT, W extends Window>
+  public static class HintBuilderOutput<LEFT, RIGHT, KEY, OUT, W extends Window<W>>
       implements Builders.OutputWithHint<Pair<KEY, OUT>, JoinHint>,
           Builders.OutputValues<KEY, OUT> {
 
@@ -248,7 +248,7 @@ public class Join<LEFT, RIGHT, KEY, OUT, W extends Window<W>>
   }
 
   public static class OutputBuilder<LEFT, RIGHT, KEY, OUT, W extends Window<W>>
-      implements Builders.OutputValues<KEY, OUT> {
+      implements Builders.OutputValues<KEY, OUT>, Builders.Output<Pair<KEY, OUT>> {
 
     private final String name;
     private final Dataset<LEFT> left;
