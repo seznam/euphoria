@@ -71,7 +71,7 @@ public abstract class Operator<IN, OUT> implements Serializable {
    */
   final Dataset<OUT> createOutput(final Dataset<IN> input) {
     Flow flow = input.getFlow();
-    return Datasets.createOutputFor(flow, input, this);
+    return Datasets.createOutputFor(flow, input.isBounded(), this);
   }
 
   /**
