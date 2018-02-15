@@ -20,6 +20,7 @@ import cz.seznam.euphoria.core.client.dataset.Dataset;
 import cz.seznam.euphoria.core.client.dataset.Datasets;
 import cz.seznam.euphoria.core.client.flow.Flow;
 import cz.seznam.euphoria.core.executor.graph.DAG;
+import cz.seznam.euphoria.shadow.com.google.common.base.Preconditions;
 
 import java.io.Serializable;
 import java.util.Collection;
@@ -70,8 +71,10 @@ public abstract class Operator<IN, OUT> implements Serializable {
    * @return a newly created dataset associated with this operator as its output
    */
   final Dataset<OUT> createOutput(final Dataset<IN> input) {
-    Flow flow = input.getFlow();
-    return Datasets.createOutputFor(flow, input.isBounded(), this);
+    Preconditions.checkArgument(
+        input.getFlow() == getFlow(),
+        "Please don't mix operators and datasets from various flows.");
+    return Datasets.createOutputFor(input.isBounded(), this);
   }
 
   /**
