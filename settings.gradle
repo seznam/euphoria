@@ -18,6 +18,7 @@ include ':euphoria-local'
 include ':euphoria-flink'
 include ':euphoria-spark'
 include ':euphoria-beam'
+include ':euphoria-tez'
 
 // ~ extras
 include ':euphoria-fluent'

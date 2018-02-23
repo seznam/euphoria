@@ -1,0 +1,16 @@
+ext {
+  tezVersion = '0.9.1'
+}
+
+dependencies {
+  compile project(':euphoria-core')
+  compile project(':euphoria-hadoop')
+  compile "org.apache.tez:tez-api:${tezVersion}"
+  compile "org.apache.tez:tez-runtime-library:${tezVersion}"
+  compile "org.apache.tez:tez-dag:${tezVersion}"
+  compile "org.apache.tez:tez-mapreduce:${tezVersion}"
+
+  testCompile project(':euphoria-operator-testkit')
+}
+
+test.testLogging.showStandardStreams = true

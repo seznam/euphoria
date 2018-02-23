@@ -73,8 +73,7 @@ public class DataSourceInputFormat<V> extends InputFormat<NullWritable, V> {
     return Serializer.fromBytes(Base64.getDecoder().decode(base64bytes));
   }
 
-
-  private static class SourceSplit<V> extends InputSplit implements Writable {
+  public static class SourceSplit<V> extends InputSplit implements Writable {
 
     private BoundedDataSource<V> partition;
 

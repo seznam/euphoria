@@ -20,6 +20,7 @@ import cz.seznam.euphoria.core.client.dataset.Dataset;
 import cz.seznam.euphoria.core.client.functional.Consumer;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -127,8 +128,10 @@ public class ListDataSink<T> implements DataSink<T> {
 
   @SuppressWarnings("unchecked")
   public List<T> getOutputs() {
-    return (List) storage.get(this).values()
-        .stream().flatMap(v -> v.stream())
+    return (List) storage.get(this)
+        .values()
+        .stream()
+        .flatMap(Collection::stream)
         .collect(Collectors.toList());
   }
 
