@@ -72,7 +72,7 @@ import java.util.Set;
     state = StateComplexity.LINEAR,
     repartitions = 1
 )
-public class Join<LEFT, RIGHT, KEY, OUT, W extends Window>
+public class Join<LEFT, RIGHT, KEY, OUT, W extends Window<W>>
     extends StateAwareWindowWiseOperator<Object, Either<LEFT, RIGHT>,
     Either<LEFT, RIGHT>, KEY, Pair<KEY, OUT>, W, Join<LEFT, RIGHT, KEY, OUT, W>>
     implements HintAware<JoinHint>, Builders.OutputValues<KEY, OUT> {
@@ -191,18 +191,18 @@ public class Join<LEFT, RIGHT, KEY, OUT, W extends Window>
     }
 
     @Override
-    public OutputBuilder<LEFT, RIGHT, KEY, OUT, Window> withHints(Set<JoinHint> hints) {
+    public OutputBuilder<LEFT, RIGHT, KEY, OUT, ?> withHints(Set<JoinHint> hints) {
       return windowBy(null).withHints(hints);
     }
 
-    public <W extends Window> HintBuilderOutput<LEFT, RIGHT, KEY, OUT, W> windowBy(
+    public <W extends Window<W>> HintBuilderOutput<LEFT, RIGHT, KEY, OUT, W> windowBy(
         Windowing<Either<LEFT, RIGHT>, W> windowing) {
       return new HintBuilderOutput<>(name, left, right, leftKeyExtractor,
           rightKeyExtractor, joinFunc, type, windowing);
     }
   }
 
-  public static class HintBuilderOutput<LEFT, RIGHT, KEY, OUT, W extends Window>
+  public static class HintBuilderOutput<LEFT, RIGHT, KEY, OUT, W extends Window<W>>
       implements Builders.OutputWithHint<Pair<KEY, OUT>, JoinHint>,
           Builders.OutputValues<KEY, OUT> {
 
@@ -247,8 +247,8 @@ public class Join<LEFT, RIGHT, KEY, OUT, W extends Window>
     }
   }
 
-  public static class OutputBuilder<LEFT, RIGHT, KEY, OUT, W extends Window>
-      implements Builders.OutputValues<KEY, OUT> {
+  public static class OutputBuilder<LEFT, RIGHT, KEY, OUT, W extends Window<W>>
+      implements Builders.OutputValues<KEY, OUT>, Builders.Output<Pair<KEY, OUT>> {
 
     private final String name;
     private final Dataset<LEFT> left;
