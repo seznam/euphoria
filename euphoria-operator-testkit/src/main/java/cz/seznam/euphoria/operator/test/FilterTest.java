@@ -17,6 +17,7 @@ package cz.seznam.euphoria.operator.test;
 
 import cz.seznam.euphoria.core.client.dataset.Dataset;
 import cz.seznam.euphoria.core.client.operator.Filter;
+import cz.seznam.euphoria.core.client.operator.Union;
 import cz.seznam.euphoria.operator.test.junit.AbstractOperatorTest;
 import cz.seznam.euphoria.operator.test.junit.Processing;
 import org.junit.Test;
@@ -53,7 +54,40 @@ public class FilterTest extends AbstractOperatorTest {
       public List<Integer> getUnorderedOutput() {
         return Arrays.asList(2, 4, 6, 8, 10, 12, 14);
       }
-      
+
+    });
+  }
+
+  @Test
+  public void testFilter_moreFiltersOnSingleDataset() {
+    execute(new AbstractTestCase<Integer, Integer>() {
+
+      @Override
+      protected Dataset<Integer> getOutput(Dataset<Integer> input) {
+        return Union.of(
+            Filter.of(input)
+                .by(e -> e % 2 == 0)
+                .output(),
+            Filter.of(input)
+                .by(e -> e % 2 == 1)
+                .output())
+            .output();
+      }
+
+      @Override
+      protected List<Integer> getInput() {
+        return Arrays.asList(
+            1, 2, 3, 4, 5, 6,
+            7, 8, 9, 10, 11, 12, 13, 14);
+      }
+
+      @Override
+      public List<Integer> getUnorderedOutput() {
+        return Arrays.asList(
+            1, 2, 3, 4, 5, 6,
+            7, 8, 9, 10, 11, 12, 13, 14);
+      }
+
     });
   }
 }
