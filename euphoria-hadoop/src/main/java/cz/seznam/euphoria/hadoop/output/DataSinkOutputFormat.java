@@ -17,13 +17,7 @@ package cz.seznam.euphoria.hadoop.output;
 
 import cz.seznam.euphoria.core.client.io.DataSink;
 import cz.seznam.euphoria.core.client.io.Writer;
-
 import cz.seznam.euphoria.hadoop.utils.Serializer;
-import java.io.IOException;
-import java.util.Base64;
-import java.util.HashMap;
-import java.util.Map;
-
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.mapreduce.JobContext;
@@ -36,6 +30,10 @@ import org.apache.hadoop.mapreduce.TaskAttemptID;
 
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
+import java.io.IOException;
+import java.util.Base64;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * {@link OutputFormat} created from {@link DataSink}.
@@ -49,6 +47,8 @@ import javax.annotation.concurrent.GuardedBy;
 public class DataSinkOutputFormat<V> extends OutputFormat<NullWritable, V> {
 
   private static final String DATA_SINK = "cz.seznam.euphoria.hadoop.data-sink-serialized";
+
+  private static Map<TaskAttemptID, Writer<?>> writers = new ConcurrentHashMap<>();
 
   /**
    * Sets/Serializes given {@link DataSink} into Hadoop configuration. Note that
@@ -100,9 +100,6 @@ public class DataSinkOutputFormat<V> extends OutputFormat<NullWritable, V> {
   @Nullable
   @GuardedBy("lock")
   private DataSink<V> sink;
-
-  @GuardedBy("lock")
-  private Map<TaskAttemptID, Writer<V>> writers = new HashMap<>();
 
   private final Object lock = new Object();
 
@@ -160,6 +157,7 @@ public class DataSinkOutputFormat<V> extends OutputFormat<NullWritable, V> {
       public void commitJob(JobContext jobContext) throws IOException {
         super.commitJob(jobContext);
         getSink(jobContext).commit();
+        writers.clear();
       }
 
       @Override
@@ -172,13 +170,14 @@ public class DataSinkOutputFormat<V> extends OutputFormat<NullWritable, V> {
     };
   }
 
+  @SuppressWarnings("unchecked")
   private Writer<V> getWriter(TaskAttemptContext tac) throws IOException {
     synchronized (lock) {
       final TaskAttemptID tai = tac.getTaskAttemptID();
       if (!writers.containsKey(tai)) {
         writers.put(tai, getSink(tac).openWriter(tai.getTaskID().getId()));
       }
-      return writers.get(tai);
+      return (Writer<V>) writers.get(tai);
     }
   }
 

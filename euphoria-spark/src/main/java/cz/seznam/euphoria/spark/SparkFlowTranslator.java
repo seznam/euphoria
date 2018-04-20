@@ -36,6 +36,7 @@ import org.apache.hadoop.mapreduce.JobContext;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.storage.StorageLevel;
 import scala.Tuple2;
 
 import javax.annotation.Nullable;
@@ -77,9 +78,12 @@ class SparkFlowTranslator {
     Translation.add(translations, ReduceByKey.class, new ReduceByKeyTranslator(),
         ReduceByKeyTranslator::wantTranslate);
 
-    // ~ batch broadcast join for a very small left side
+    // ~ broadcast join for a very small left side
     Translation.add(translations, Join.class, new BroadcastHashJoinTranslator(),
         BroadcastHashJoinTranslator::wantTranslate);
+
+    // ~ generic join translation
+    Translation.add(translations, Join.class, new JoinTranslator());
   }
 
   @SuppressWarnings("unchecked")
@@ -110,7 +114,7 @@ class SparkFlowTranslator {
         final JavaRDD<?> out = firstMatch.translator.translate(op, executorContext);
         // ~ output result will be used more than once, cache Dataset for reusing
         if (dag.getNode(op).getChildren().size() > 1) {
-          out.cache();
+          out.persist(StorageLevel.MEMORY_AND_DISK());
         }
         // ~ save output of current operator to context
         executorContext.setOutput(op, out);
@@ -134,7 +138,8 @@ class SparkFlowTranslator {
 
           // unwrap data from WindowedElement
           JavaPairRDD<NullWritable, Object> unwrapped =
-              sparkOutput.mapToPair(el -> new Tuple2<>(NullWritable.get(), el.getElement()));
+              (JavaPairRDD<NullWritable, Object>) sparkOutput.mapToPair(el ->
+                  new Tuple2<>(NullWritable.get(), el.getElement()));
 
 
           try {
@@ -170,11 +175,7 @@ class SparkFlowTranslator {
     @Nullable
     final UnaryPredicate<O> accept;
 
-    public TranslateAcceptor(Class<O> type) {
-      this(type, null);
-    }
-
-    public TranslateAcceptor(Class<O> type, @Nullable UnaryPredicate<O> accept) {
+    TranslateAcceptor(Class<O> type, @Nullable UnaryPredicate<O> accept) {
       this.type = Objects.requireNonNull(type);
       this.accept = accept;
     }
