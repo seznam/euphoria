@@ -83,7 +83,7 @@ class SparkFlowTranslator {
         BroadcastHashJoinTranslator::wantTranslate);
 
     // ~ generic join translation
-    Translation.add(translations, Join.class, new JoinTranslator());
+    Translation.add(translations, Join.class, new JoinTranslator(), JoinTranslator::wantTranslate);
   }
 
   @SuppressWarnings("unchecked")
@@ -138,7 +138,7 @@ class SparkFlowTranslator {
 
           // unwrap data from WindowedElement
           JavaPairRDD<NullWritable, Object> unwrapped =
-              (JavaPairRDD<NullWritable, Object>) sparkOutput.mapToPair(el ->
+              sparkOutput.mapToPair(el ->
                   new Tuple2<>(NullWritable.get(), el.getElement()));
 
 

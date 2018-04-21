@@ -16,6 +16,7 @@
 package cz.seznam.euphoria.spark;
 
 import com.google.common.collect.Iterators;
+import cz.seznam.euphoria.core.client.dataset.windowing.MergingWindowing;
 import cz.seznam.euphoria.core.client.dataset.windowing.Window;
 import cz.seznam.euphoria.core.client.dataset.windowing.Windowing;
 import cz.seznam.euphoria.core.client.functional.UnaryFunction;
@@ -47,6 +48,10 @@ import java.util.List;
  * </p>
  */
 public class JoinTranslator implements SparkOperatorTranslator<Join> {
+
+  static boolean wantTranslate(Join o) {
+    return !(o.getWindowing() instanceof MergingWindowing);
+  }
 
   @Override
   @SuppressWarnings("unchecked")
@@ -130,7 +135,7 @@ public class JoinTranslator implements SparkOperatorTranslator<Join> {
 
     @Override
     @SuppressWarnings("unchecked")
-    public Iterator<Tuple2<KeyedWindow, SparkElement>> call(SparkElement se) throws Exception {
+    public Iterator<Tuple2<KeyedWindow, SparkElement>> call(SparkElement se) {
       final Iterable<Window> windows = windowing.assignWindowsToElement(new SparkElement(
           se.getWindow(),
           se.getTimestamp(),
