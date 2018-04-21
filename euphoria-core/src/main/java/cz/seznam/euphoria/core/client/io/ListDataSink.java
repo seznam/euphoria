@@ -43,7 +43,7 @@ public class ListDataSink<T> implements DataSink<T> {
   }
 
   class ListWriter implements Writer<T> {
-    final List<T> output = new ArrayList<>();
+    final List<T> output = Collections.synchronizedList(new ArrayList<>());
     final List<T> commitOutputs;
     final int partitionId;
 
