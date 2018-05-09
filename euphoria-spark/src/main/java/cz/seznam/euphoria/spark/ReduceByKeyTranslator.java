@@ -19,20 +19,28 @@ import cz.seznam.euphoria.core.client.accumulators.AccumulatorProvider;
 import cz.seznam.euphoria.core.client.dataset.windowing.MergingWindowing;
 import cz.seznam.euphoria.core.client.dataset.windowing.Window;
 import cz.seznam.euphoria.core.client.dataset.windowing.Windowing;
+import cz.seznam.euphoria.core.client.functional.BinaryFunction;
 import cz.seznam.euphoria.core.client.functional.ReduceFunctor;
 import cz.seznam.euphoria.core.client.functional.UnaryFunction;
 import cz.seznam.euphoria.core.client.operator.ReduceByKey;
 import cz.seznam.euphoria.core.client.util.Pair;
 import cz.seznam.euphoria.core.executor.util.SingleValueContext;
+import cz.seznam.euphoria.core.util.ClassUtils;
 import cz.seznam.euphoria.shadow.com.google.common.base.Preconditions;
 import cz.seznam.euphoria.shadow.com.google.common.collect.Iterators;
+import org.apache.spark.HashPartitioner;
+import org.apache.spark.Partitioner;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function2;
 import org.apache.spark.api.java.function.PairFlatMapFunction;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import scala.Tuple2;
 
+import java.io.Serializable;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.Objects;
 import java.util.stream.Stream;
@@ -40,8 +48,11 @@ import java.util.stream.StreamSupport;
 
 class ReduceByKeyTranslator implements SparkOperatorTranslator<ReduceByKey> {
 
+  private static final Logger LOG = LoggerFactory.getLogger(ReduceByKeyTranslator.class);
+
   static boolean wantTranslate(ReduceByKey operator) {
-    return operator.getValueComparator() == null
+    return (operator.getValueComparator() == null
+            || ClassUtils.isComparable(operator.getKeyClass()))
         && (operator.getWindowing() == null
             || (!(operator.getWindowing() instanceof MergingWindowing)
                 && !operator.getWindowing().getTrigger().isStateful()));
@@ -93,17 +104,46 @@ class ReduceByKeyTranslator implements SparkOperatorTranslator<ReduceByKey> {
             final OUT el = (OUT) t._2();
             return new SparkElement<>(kw.window(), kw.timestamp(), Pair.of(kw.key(), el));
           });
-    } else {
-      final JavaPairRDD<KeyedWindow<W, KEY>, OUT> reduced =
-          tuples.groupByKey().flatMapValues(new Reducer<>(reducer, accumulatorProvider));
-
-      return reduced.map(
-          t -> {
-            final KeyedWindow<W, KEY> kw = t._1();
-            final OUT el = t._2();
-            return new SparkElement<>(kw.window(), kw.timestamp(), Pair.of(kw.key(), el));
-          });
     }
+
+    final JavaPairRDD<KeyedWindow<W, KEY>, OUT> reduced;
+
+    if (ClassUtils.isComparable(operator.getKeyClass())) {
+      final Partitioner partitioner = new HashPartitioner(input.getNumPartitions());
+
+      if (operator.getValueComparator() != null) {
+        // if we have a value comparator we need to secondary sort the values within key
+        reduced =
+            tuples
+                .mapToPair(t -> new Tuple2<>(new KeyedWindowValue<>(t._1, t._2), Empty.get()))
+                .repartitionAndSortWithinPartitions(
+                    partitioner, new SecondarySortComparator<>(operator.getValueComparator()))
+                .mapToPair(t -> new Tuple2<>(t._1.toKeyedWindow(), t._1.getValue()))
+                .mapPartitionsToPair(ReduceByKeyIterator::new)
+                .flatMapValues(new Reducer<>(reducer, accumulatorProvider));
+      } else {
+        // if the key is comparable, we can optimize for memory efficiency
+        reduced =
+            tuples
+                .repartitionAndSortWithinPartitions(partitioner)
+                .mapPartitionsToPair(ReduceByKeyIterator::new)
+                .flatMapValues(new Reducer<>(reducer, accumulatorProvider));
+      }
+    } else {
+      LOG.warn(
+          "Key for ["
+              + operator.getName()
+              + "] is not comparable, so we can not optimize for memory efficiency.");
+      // we can n
+      reduced = tuples.groupByKey().flatMapValues(new Reducer<>(reducer, accumulatorProvider));
+    }
+
+    return reduced.map(
+        t -> {
+          final KeyedWindow<W, KEY> kw = t._1();
+          final OUT el = t._2();
+          return new SparkElement<>(kw.window(), kw.timestamp(), Pair.of(kw.key(), el));
+        });
   }
 
   /**
@@ -179,6 +219,58 @@ class ReduceByKeyTranslator implements SparkOperatorTranslator<ReduceByKey> {
       }
       reducer.apply(Stream.of(o1, o2), context);
       return context.getAndResetValue();
+    }
+  }
+
+  /**
+   * We need pass value into keyed window in order to implement secondary sort.
+   *
+   * @param <W> window type
+   * @param <K> key type
+   * @param <V> value type
+   */
+  static class KeyedWindowValue<W extends Window, K, V> extends KeyedWindow<W, K> {
+
+    private final V value;
+
+    KeyedWindowValue(KeyedWindow<W, K> keyedWindow, V value) {
+      super(keyedWindow.window(), keyedWindow.timestamp(), keyedWindow.key());
+      this.value = value;
+    }
+
+    public V getValue() {
+      return value;
+    }
+
+    public KeyedWindow<W, K> toKeyedWindow() {
+      return new KeyedWindow<>(window(), timestamp(), key());
+    }
+  }
+
+  /**
+   * Sort values within a keyed window.
+   *
+   * @param <W> window type
+   * @param <K> key type
+   * @param <V> value type
+   */
+  private static class SecondarySortComparator<W extends Window, K, V>
+      implements Comparator<KeyedWindowValue<W, K, V>>, Serializable {
+
+    private final BinaryFunction<V, V, Integer> valueComparator;
+
+    SecondarySortComparator(BinaryFunction<V, V, Integer> valueComparator) {
+      this.valueComparator = Objects.requireNonNull(valueComparator);
+    }
+
+    @Override
+    public int compare(KeyedWindowValue<W, K, V> o1, KeyedWindowValue<W, K, V> o2) {
+      final int keyedWindowCompare = o1.compareTo(o2);
+      if (keyedWindowCompare == 0) {
+        // we are in the same window and same key - lets do secondary sort
+        return valueComparator.apply(o1.getValue(), o2.getValue());
+      }
+      return keyedWindowCompare;
     }
   }
 }

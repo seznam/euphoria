@@ -88,7 +88,7 @@ public class ReduceByKeyTest extends AbstractOperatorTest {
       protected Dataset<Pair<Integer, Set<Integer>>>
       getOutput(Dataset<Integer> input) {
         return ReduceByKey.of(input)
-            .keyBy(e -> e % 2)
+            .keyBy(e -> e % 2, Integer.class)
             .valueBy(e -> e)
             .reduceBy(s -> s.collect(Collectors.toSet()))
             .windowBy(Count.of(3))
@@ -121,7 +121,7 @@ public class ReduceByKeyTest extends AbstractOperatorTest {
       protected Dataset<Set<Integer>>
       getOutput(Dataset<Integer> input) {
         return ReduceByKey.of(input)
-            .keyBy(e -> e % 2)
+            .keyBy(e -> e % 2, Integer.class)
             .valueBy(e -> e)
             .reduceBy(s -> s.collect(Collectors.toSet()))
             .windowBy(Count.of(3))
@@ -155,7 +155,7 @@ public class ReduceByKeyTest extends AbstractOperatorTest {
       protected Dataset<List<Pair<Integer, List<Integer>>>>
       getOutput(Dataset<Integer> input) {
         Dataset<Pair<Integer, List<Integer>>> reducedByWindow = ReduceByKey.of(input)
-            .keyBy(e -> e % 2)
+            .keyBy(e -> e % 2, Integer.class)
             .valueBy(e -> e)
             .reduceBy(s -> s.collect(Collectors.toList()))
             .withSortedValues(Integer::compare)
@@ -211,7 +211,7 @@ public class ReduceByKeyTest extends AbstractOperatorTest {
       protected Dataset<Pair<Integer, Integer>>
       getOutput(Dataset<Integer> input) {
         return ReduceByKey.of(input)
-            .keyBy(e -> e % 2)
+            .keyBy(e -> e % 2, Integer.class)
             .reduceBy(Fold.whileEmittingEach(0, (a, b) -> a + b))
             .windowBy(Count.of(3))
             .output();
@@ -254,7 +254,7 @@ public class ReduceByKeyTest extends AbstractOperatorTest {
       protected Dataset<Pair<Integer, Long>> getOutput(Dataset<Pair<Integer, Long>> input) {
         input = AssignEventTime.of(input).using(Pair::getSecond).output();
         return ReduceByKey.of(input)
-            .keyBy(Pair::getFirst)
+            .keyBy(Pair::getFirst, Integer.class)
             .valueBy(e -> 1L)
             .combineBy(Sums.ofLongs())
             .windowBy(Time.of(Duration.ofSeconds(1)))
@@ -307,7 +307,7 @@ public class ReduceByKeyTest extends AbstractOperatorTest {
       @Override
       protected Dataset<Pair<Integer, Long>> getOutput(Dataset<Integer> input) {
         return ReduceByKey.of(input)
-            .keyBy(e -> e % 3)
+            .keyBy(e -> e % 3, Integer.class)
             .valueBy(e -> 1L)
             .combineBy(Sums.ofLongs())
             .windowBy(new TestWindowing())
@@ -396,10 +396,44 @@ public class ReduceByKeyTest extends AbstractOperatorTest {
       @Override
       protected Dataset<Pair<String, List<Long>>> getOutput(Dataset<Pair<String, Long>> input) {
         return ReduceByKey.of(input)
-            .keyBy(Pair::getFirst)
+            .keyBy(Pair::getFirst, String.class)
             .valueBy(Pair::getSecond)
             .reduceBy((Stream<Long> values, Collector<List<Long>> coll) ->
                 coll.collect(values.collect(Collectors.toList())))
+            .withSortedValues(Long::compareTo)
+            .output();
+      }
+    });
+  }
+
+  @Processing(Processing.Type.BOUNDED)
+  @Test
+  public void testReduceSortedWithoutReadingAllValues() {
+    execute(new AbstractTestCase<Pair<String, Long>, Pair<String, List<Long>>>() {
+
+      @Override
+      protected List<Pair<String, Long>> getInput() {
+        return Arrays.asList(
+            Pair.of("one", 3L), Pair.of("one", 2L), Pair.of("one", 1L),
+            Pair.of("two", 3L), Pair.of("two", 2L), Pair.of("two", 1L),
+            Pair.of("three", 3L), Pair.of("three", 2L), Pair.of("three", 1L));
+      }
+
+      @Override
+      public List<Pair<String, List<Long>>> getUnorderedOutput() {
+        return Arrays.asList(
+            Pair.of("one", Arrays.asList(1L, 2L)),
+            Pair.of("two", Arrays.asList(1L, 2L)),
+            Pair.of("three", Arrays.asList(1L, 2L)));
+      }
+
+      @Override
+      protected Dataset<Pair<String, List<Long>>> getOutput(Dataset<Pair<String, Long>> input) {
+        return ReduceByKey.of(input)
+            .keyBy(Pair::getFirst, String.class)
+            .valueBy(Pair::getSecond)
+            .reduceBy((Stream<Long> values, Collector<List<Long>> coll) ->
+                coll.collect(values.limit(2).collect(Collectors.toList())))
             .withSortedValues(Long::compareTo)
             .output();
       }

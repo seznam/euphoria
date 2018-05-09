@@ -45,7 +45,6 @@ import cz.seznam.euphoria.core.executor.util.SingleValueContext;
 import cz.seznam.euphoria.shadow.com.google.common.collect.Sets;
 
 import javax.annotation.Nullable;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.Objects;
 import java.util.Set;
@@ -127,7 +126,12 @@ public class ReduceByKey<IN, KEY, VALUE, OUT, W extends Window>
 
     @Override
     public <KEY> DatasetBuilder2<IN, KEY> keyBy(UnaryFunction<IN, KEY> keyExtractor) {
-      return new DatasetBuilder2<>(name, input, keyExtractor);
+      return keyBy(keyExtractor, null);
+    }
+
+    public <KEY> DatasetBuilder2<IN, KEY> keyBy(
+        UnaryFunction<IN, KEY> keyExtractor, @Nullable Class<KEY> keyClass) {
+      return new DatasetBuilder2<>(name, input, keyExtractor, keyClass);
     }
   }
 
@@ -187,12 +191,20 @@ public class ReduceByKey<IN, KEY, VALUE, OUT, W extends Window>
     private final String name;
     private final Dataset<IN> input;
     private final UnaryFunction<IN, KEY> keyExtractor;
+    @Nullable
+    private final Class<KEY> keyClass;
 
-    DatasetBuilder2(String name, Dataset<IN> input, UnaryFunction<IN, KEY> keyExtractor) {
+    DatasetBuilder2(
+        String name,
+        Dataset<IN> input,
+        UnaryFunction<IN, KEY> keyExtractor,
+        @Nullable Class<KEY> keyClass) {
       this.name = Objects.requireNonNull(name);
       this.input = Objects.requireNonNull(input);
       this.keyExtractor = Objects.requireNonNull(keyExtractor);
+      this.keyClass = keyClass;
     }
+
     /**
      * Specifies the function to derive a value from the
      * {@link ReduceByKey} operator's input elements to get
@@ -209,7 +221,7 @@ public class ReduceByKey<IN, KEY, VALUE, OUT, W extends Window>
     public <VALUE> DatasetBuilder3<IN, KEY, VALUE> valueBy(
         UnaryFunction<IN, VALUE> valueExtractor) {
 
-      return new DatasetBuilder3<>(name, input, keyExtractor, valueExtractor);
+      return new DatasetBuilder3<>(name, input, keyExtractor, keyClass, valueExtractor);
     }
 
     @Override
@@ -217,7 +229,7 @@ public class ReduceByKey<IN, KEY, VALUE, OUT, W extends Window>
         ReduceFunctor<IN, OUT> reducer) {
 
       return new SortableDatasetBuilder4<>(
-          name, input, keyExtractor, e-> e, reducer, null);
+          name, input, keyExtractor, keyClass, e-> e, reducer, null);
     }
   }
 
@@ -225,14 +237,19 @@ public class ReduceByKey<IN, KEY, VALUE, OUT, W extends Window>
     private final String name;
     private final Dataset<IN> input;
     private final UnaryFunction<IN, KEY> keyExtractor;
+    @Nullable
+    private final Class<KEY> keyClass;
     private final UnaryFunction<IN, VALUE> valueExtractor;
     DatasetBuilder3(String name,
                     Dataset<IN> input,
                     UnaryFunction<IN, KEY> keyExtractor,
-                    UnaryFunction<IN, VALUE> valueExtractor) {
+                    @Nullable Class<KEY> keyClass,
+                    UnaryFunction<IN, VALUE> valueExtractor
+    ) {
       this.name = Objects.requireNonNull(name);
       this.input = Objects.requireNonNull(input);
       this.keyExtractor = Objects.requireNonNull(keyExtractor);
+      this.keyClass = keyClass;
       this.valueExtractor = Objects.requireNonNull(valueExtractor);
     }
 
@@ -241,7 +258,7 @@ public class ReduceByKey<IN, KEY, VALUE, OUT, W extends Window>
         ReduceFunctor<VALUE, OUT> reducer) {
 
       return new SortableDatasetBuilder4<>(
-          name, input, keyExtractor, valueExtractor, reducer, null);
+          name, input, keyExtractor, keyClass, valueExtractor, reducer, null);
     }
   }
 
@@ -253,6 +270,7 @@ public class ReduceByKey<IN, KEY, VALUE, OUT, W extends Window>
     final String name;
     final Dataset<IN> input;
     final UnaryFunction<IN, KEY> keyExtractor;
+    final Class<KEY> keyClass;
     final UnaryFunction<IN, VALUE> valueExtractor;
     final ReduceFunctor<VALUE, OUT> reducer;
     final @Nullable BinaryFunction<VALUE, VALUE, Integer> valuesComparator;
@@ -260,6 +278,7 @@ public class ReduceByKey<IN, KEY, VALUE, OUT, W extends Window>
     DatasetBuilder4(String name,
                     Dataset<IN> input,
                     UnaryFunction<IN, KEY> keyExtractor,
+                    @Nullable Class<KEY> keyClass,
                     UnaryFunction<IN, VALUE> valueExtractor,
                     ReduceFunctor<VALUE, OUT> reducer,
                     @Nullable BinaryFunction<VALUE, VALUE, Integer> valuesComparator) {
@@ -267,6 +286,7 @@ public class ReduceByKey<IN, KEY, VALUE, OUT, W extends Window>
       this.name = Objects.requireNonNull(name);
       this.input = Objects.requireNonNull(input);
       this.keyExtractor = Objects.requireNonNull(keyExtractor);
+      this.keyClass = keyClass;
       this.valueExtractor = Objects.requireNonNull(valueExtractor);
       this.reducer = Objects.requireNonNull(reducer);
       this.valuesComparator = valuesComparator;
@@ -277,16 +297,21 @@ public class ReduceByKey<IN, KEY, VALUE, OUT, W extends Window>
     DatasetBuilder5<IN, KEY, VALUE, OUT, W>
     windowBy(Windowing<IN, W> windowing) {
       return new DatasetBuilder5<>(
-          name, input, keyExtractor, valueExtractor,
-          reducer, Objects.requireNonNull(windowing),
+          name,
+          input,
+          keyExtractor,
+          keyClass,
+          valueExtractor,
+          reducer,
+          Objects.requireNonNull(windowing),
           valuesComparator);
     }
 
     @Override
     public Dataset<Pair<KEY, OUT>> output(OutputHint... outputHints) {
       return new DatasetBuilder5<>(
-          name, input, keyExtractor, valueExtractor,
-          reducer, null, valuesComparator).output(outputHints);
+              name, input, keyExtractor, keyClass, valueExtractor, reducer, null, valuesComparator)
+          .output(outputHints);
     }
   }
 
@@ -299,11 +324,12 @@ public class ReduceByKey<IN, KEY, VALUE, OUT, W extends Window>
         String name,
         Dataset<IN> input,
         UnaryFunction<IN, KEY> keyExtractor,
+        @Nullable Class<KEY> keyClass,
         UnaryFunction<IN, VALUE> valueExtractor,
         ReduceFunctor<VALUE, OUT> reducer,
         @Nullable BinaryFunction<VALUE, VALUE, Integer> valuesComparator) {
 
-      super(name, input, keyExtractor, valueExtractor, reducer, valuesComparator);
+      super(name, input, keyExtractor, keyClass, valueExtractor, reducer, valuesComparator);
     }
 
 
@@ -317,8 +343,7 @@ public class ReduceByKey<IN, KEY, VALUE, OUT, W extends Window>
         BinaryFunction<VALUE, VALUE, Integer> comparator) {
 
       return new SortableDatasetBuilder4<>(
-          name, input, keyExtractor, valueExtractor,
-          reducer, comparator);
+          name, input, keyExtractor, keyClass, valueExtractor, reducer, comparator);
     }
 
   }
@@ -335,21 +360,31 @@ public class ReduceByKey<IN, KEY, VALUE, OUT, W extends Window>
         String name,
         Dataset<IN> input,
         UnaryFunction<IN, KEY> keyExtractor,
+        @Nullable Class<KEY> keyClass,
         UnaryFunction<IN, VALUE> valueExtractor,
         ReduceFunctor<VALUE, OUT> reducer,
         @Nullable Windowing<IN, W> windowing,
         @Nullable BinaryFunction<VALUE, VALUE, Integer> valuesComparator) {
 
-      super(name, input, keyExtractor, valueExtractor, reducer, valuesComparator);
+      super(name, input, keyExtractor, keyClass, valueExtractor, reducer, valuesComparator);
       this.windowing = windowing;
     }
 
     @Override
     public Dataset<Pair<KEY, OUT>> output(OutputHint... outputHints) {
       Flow flow = input.getFlow();
-      ReduceByKey<IN, KEY, VALUE, OUT, W> reduce = new ReduceByKey<>(
-          name, flow, input, keyExtractor, valueExtractor,
-          windowing, reducer, valuesComparator, Sets.newHashSet(outputHints));
+      ReduceByKey<IN, KEY, VALUE, OUT, W> reduce =
+          new ReduceByKey<>(
+              name,
+              flow,
+              input,
+              keyExtractor,
+              keyClass,
+              valueExtractor,
+              windowing,
+              reducer,
+              valuesComparator,
+              Sets.newHashSet(outputHints));
       flow.add(reduce);
       return reduce.output();
     }
@@ -383,6 +418,9 @@ public class ReduceByKey<IN, KEY, VALUE, OUT, W extends Window>
     return new OfBuilder(name);
   }
 
+  @Nullable
+  private final Class<KEY> keyClass;
+
   final ReduceFunctor<VALUE, OUT> reducer;
   final UnaryFunction<IN, VALUE> valueExtractor;
   @Nullable
@@ -393,20 +431,29 @@ public class ReduceByKey<IN, KEY, VALUE, OUT, W extends Window>
               Flow flow,
               Dataset<IN> input,
               UnaryFunction<IN, KEY> keyExtractor,
+              @Nullable Class<KEY> keyClass,
               UnaryFunction<IN, VALUE> valueExtractor,
               @Nullable Windowing<IN, W> windowing,
               CombinableReduceFunction<OUT> reducer,
               Set<OutputHint> outputHints) {
     this(
-        name, flow, input, keyExtractor, valueExtractor,
-        windowing, (ReduceFunctor<VALUE, OUT>) toReduceFunctor(reducer),
-        null, outputHints);
+        name,
+        flow,
+        input,
+        keyExtractor,
+        keyClass,
+        valueExtractor,
+        windowing,
+        (ReduceFunctor<VALUE, OUT>) toReduceFunctor(reducer),
+        null,
+        outputHints);
   }
 
   ReduceByKey(String name,
               Flow flow,
               Dataset<IN> input,
               UnaryFunction<IN, KEY> keyExtractor,
+              @Nullable Class<KEY> keyClass,
               UnaryFunction<IN, VALUE> valueExtractor,
               @Nullable Windowing<IN, W> windowing,
               ReduceFunctor<VALUE, OUT> reducer,
@@ -414,9 +461,15 @@ public class ReduceByKey<IN, KEY, VALUE, OUT, W extends Window>
               Set<OutputHint> outputHints) {
 
     super(name, flow, input, keyExtractor, windowing, outputHints);
+    this.keyClass = keyClass;
     this.reducer = reducer;
     this.valueExtractor = valueExtractor;
     this.valueComparator = valueComparator;
+  }
+
+  @Nullable
+  public Class<KEY> getKeyClass() {
+    return keyClass;
   }
 
   public ReduceFunctor<VALUE, OUT> getReducer() {

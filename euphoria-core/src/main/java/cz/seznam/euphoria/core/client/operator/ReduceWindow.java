@@ -298,7 +298,7 @@ public class ReduceWindow<
     if (windowing != null) {
       rbk = new ReduceByKey<>(
           getName() + "::ReduceByKey", getFlow(), input,
-          getKeyExtractor(), valueExtractor,
+          getKeyExtractor(), null, valueExtractor,
           windowing, reducer, valueComparator, getHints());
       dag.add(rbk);
     } else {
@@ -314,7 +314,7 @@ public class ReduceWindow<
           null);
       rbk = new ReduceByKey<>(
           getName() + "::ReduceByKey::attached", getFlow(), map.output(),
-          Pair::getFirst, p -> valueExtractor.apply(p.getSecond()),
+          Pair::getFirst, null, p -> valueExtractor.apply(p.getSecond()),
           null, reducer, valueComparator, getHints());
       dag.add(map);
       dag.add(rbk);
