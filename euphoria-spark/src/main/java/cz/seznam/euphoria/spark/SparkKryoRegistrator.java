@@ -35,15 +35,17 @@ public abstract class SparkKryoRegistrator implements KryoRegistrator {
   public void registerClasses(Kryo kryo) {
     // windows
     kryo.register(Window.class);
-    kryo.register(KeyedWindow.class);
     kryo.register(TimeInterval.class);
     kryo.register(GlobalWindowing.Window.class, SingletonSerializer.of("get"));
 
     // element wrappers
+    kryo.register(KeyedWindow.class);
+    kryo.register(ReduceByKeyTranslator.KeyedWindowValue.class);
     kryo.register(SparkElement.class);
     kryo.register(Either.class);
     kryo.register(BatchJoinKey.class);
     kryo.register(BatchJoinKey.Side.class);
+    kryo.register(Empty.class, SingletonSerializer.of("get"));
 
     // broadcast hash join
     kryo.register(HashMap.class);

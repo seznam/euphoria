@@ -205,7 +205,7 @@ public class Distinct<IN, ELEM, W extends Window>
     String name = getName() + "::" + "ReduceByKey";
     ReduceByKey<IN, ELEM, Void, Void, W> reduce =
         new ReduceByKey<>(name,
-            flow, input, getKeyExtractor(), e -> null,
+            flow, input, getKeyExtractor(), null, e -> null,
             windowing,
             (CombinableReduceFunction<Void>) e -> null,
             Collections.emptySet());

@@ -19,6 +19,7 @@ import cz.seznam.euphoria.core.client.dataset.windowing.GlobalWindowing;
 import cz.seznam.euphoria.core.client.operator.Join;
 import cz.seznam.euphoria.core.client.util.Either;
 import cz.seznam.euphoria.core.client.util.Pair;
+import cz.seznam.euphoria.core.util.ClassUtils;
 import cz.seznam.euphoria.shadow.com.google.common.base.Preconditions;
 import cz.seznam.euphoria.shadow.com.google.common.collect.Iterators;
 import org.apache.spark.Partitioner;
@@ -67,7 +68,7 @@ class BatchJoinTranslator implements SparkOperatorTranslator<Join> {
   @SuppressWarnings("unchecked")
   static boolean wantTranslate(Join join) {
     return (join.getWindowing() == null || join.getWindowing() instanceof GlobalWindowing)
-        && (join.getKeyClass() != null && Comparable.class.isAssignableFrom(join.getKeyClass()));
+        && ClassUtils.isComparable(join.getKeyClass());
   }
 
   /**
