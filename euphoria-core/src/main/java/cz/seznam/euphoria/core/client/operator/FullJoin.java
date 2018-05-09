@@ -22,6 +22,7 @@ import cz.seznam.euphoria.core.client.dataset.windowing.Windowing;
 import cz.seznam.euphoria.core.client.functional.BinaryFunctor;
 import cz.seznam.euphoria.core.client.functional.UnaryFunction;
 
+import javax.annotation.Nullable;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -78,7 +79,14 @@ public class FullJoin {
     public <KEY> UsingBuilder<LEFT, RIGHT, KEY> by(
         UnaryFunction<LEFT, KEY> leftKeyExtractor,
         UnaryFunction<RIGHT, KEY> rightKeyExtractor) {
-      return new UsingBuilder<>(name, left, right, leftKeyExtractor, rightKeyExtractor);
+      return by(leftKeyExtractor, rightKeyExtractor, null);
+    }
+
+    public <KEY> UsingBuilder<LEFT, RIGHT, KEY> by(
+        UnaryFunction<LEFT, KEY> leftKeyExtractor,
+        UnaryFunction<RIGHT, KEY> rightKeyExtractor,
+        @Nullable Class<KEY> keyClass) {
+      return new UsingBuilder<>(name, left, right, leftKeyExtractor, rightKeyExtractor, keyClass);
     }
   }
 
@@ -89,17 +97,21 @@ public class FullJoin {
     private final Dataset<RIGHT> right;
     private final UnaryFunction<LEFT, KEY> leftKeyExtractor;
     private final UnaryFunction<RIGHT, KEY> rightKeyExtractor;
+    @Nullable
+    private final Class<KEY> keyClass;
 
     UsingBuilder(String name,
                  Dataset<LEFT> left,
                  Dataset<RIGHT> right,
                  UnaryFunction<LEFT, KEY> leftKeyExtractor,
-                 UnaryFunction<RIGHT, KEY> rightKeyExtractor) {
+                 UnaryFunction<RIGHT, KEY> rightKeyExtractor,
+                 @Nullable Class<KEY> keyClass) {
       this.name = name;
       this.left = left;
       this.right = right;
       this.leftKeyExtractor = leftKeyExtractor;
       this.rightKeyExtractor = rightKeyExtractor;
+      this.keyClass = keyClass;
     }
 
     public <OUT> Join.WindowingBuilder<LEFT, RIGHT, KEY, OUT> using(
@@ -107,7 +119,7 @@ public class FullJoin {
       final BinaryFunctor<LEFT, RIGHT, OUT> wrappedFunctor = (left, right, context) ->
           functor.apply(Optional.ofNullable(left), Optional.ofNullable(right), context);
       return new Join.WindowingBuilder<>(name, left, right,
-          leftKeyExtractor, rightKeyExtractor, wrappedFunctor, Join.Type.FULL);
+          leftKeyExtractor, rightKeyExtractor, keyClass, wrappedFunctor, Join.Type.FULL);
     }
   }
 

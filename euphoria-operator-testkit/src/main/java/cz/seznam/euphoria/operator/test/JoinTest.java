@@ -79,7 +79,7 @@ public class JoinTest extends AbstractOperatorTest {
       protected Dataset<Pair<Integer, String>> getOutput(
           Dataset<Integer> left, Dataset<Long> right) {
         return FullJoin.of(left, right)
-            .by(e -> e, e -> (int) (e % 10))
+            .by(e -> e, e -> (int) (e % 10), Integer.class)
             .using((Optional<Integer> l, Optional<Long> r, Collector<String> c) ->
                 c.collect(l.orElse(null) + "+" + r.orElse(null)))
             .output();
@@ -119,7 +119,7 @@ public class JoinTest extends AbstractOperatorTest {
       protected Dataset<String> getOutput(
           Dataset<Integer> left, Dataset<Long> right) {
         return FullJoin.of(left, right)
-            .by(e -> e, e -> (int) (e % 10))
+            .by(e -> e, e -> (int) (e % 10), Integer.class)
             .using((Optional<Integer> l, Optional<Long> r, Collector<String> c) ->
                 c.collect(l.orElse(null) + "+" + r.orElse(null)))
             .outputValues();
@@ -157,7 +157,7 @@ public class JoinTest extends AbstractOperatorTest {
       protected Dataset<Pair<Integer, String>> getOutput(
           Dataset<Integer> left, Dataset<Long> right) {
         return LeftJoin.of(left, right)
-            .by(e -> e, e -> (int) (e % 10))
+            .by(e -> e, e -> (int) (e % 10), Integer.class)
             .using((Integer l, Optional<Long> r, Collector<String> c) ->
                 c.collect(l + "+" + r.orElse(null)))
             .output();
@@ -197,7 +197,7 @@ public class JoinTest extends AbstractOperatorTest {
       protected Dataset<Pair<Integer, String>> getOutput(
           Dataset<Integer> left, Dataset<Long> right) {
         return RightJoin.of(left, right)
-            .by(e -> e, e -> (int) (e % 10))
+            .by(e -> e, e -> (int) (e % 10), Integer.class)
             .using((Optional<Integer> l, Long r, Collector<String> c) ->
                 c.collect(l.orElse(null) + "+" + r))
             .output();
@@ -236,7 +236,7 @@ public class JoinTest extends AbstractOperatorTest {
       protected Dataset<Pair<Integer, String>> getOutput(
           Dataset<Integer> left, Dataset<Long> right) {
         return Join.of(left, right)
-            .by(e -> e, e -> (int) (e % 10))
+            .by(e -> e, e -> (int) (e % 10), Integer.class)
             .using((Integer l, Long r, Collector<String> c) -> {
                 c.collect(l + "+" + r);
             })
@@ -301,7 +301,7 @@ public class JoinTest extends AbstractOperatorTest {
       protected Dataset<Pair<Integer, String>> getOutput(
           Dataset<Integer> left, Dataset<Long> right) {
         return FullJoin.of(left, right)
-            .by(e -> e, e -> (int) (e % 10))
+            .by(e -> e, e -> (int) (e % 10), Integer.class)
             .using((Optional<Integer> l, Optional<Long> r, Collector<String> c) -> {
               c.collect(l.orElse(null) + "+" + r.orElse(null));
             })
@@ -339,7 +339,7 @@ public class JoinTest extends AbstractOperatorTest {
       protected Dataset<Pair<Integer, String>> getOutput(
           Dataset<Integer> left, Dataset<Long> right) {
         return LeftJoin.of(left, right)
-            .by(e -> e, e -> (int) (e % 10))
+            .by(e -> e, e -> (int) (e % 10), Integer.class)
             .using((Integer l, Optional<Long> r, Collector<String> c) -> {
               c.collect(l + "+" + r.orElse(null));
             })
@@ -376,7 +376,7 @@ public class JoinTest extends AbstractOperatorTest {
       protected Dataset<Pair<Integer, String>> getOutput(
           Dataset<Integer> left, Dataset<Long> right) {
         return RightJoin.of(left, right)
-            .by(e -> e, e -> (int) (e % 10))
+            .by(e -> e, e -> (int) (e % 10), Integer.class)
             .using((Optional<Integer> l, Long r, Collector<String> c) -> {
               c.collect(l.orElse(null) + "+" + r);
             })
@@ -431,7 +431,7 @@ public class JoinTest extends AbstractOperatorTest {
         right = AssignEventTime.of(right).using(Pair::getSecond).output();
         Dataset<Pair<String, Triple<TimeInterval, String, String>>> joined =
             Join.of(left, right)
-                .by(p -> "", p -> "")
+                .by(p -> "", p -> "", String.class)
                 .using((Pair<String, Long> l, Pair<String, Long> r, Collector<Triple<TimeInterval, String, String>> c) ->
                     c.collect(Triple.of((TimeInterval) c.getWindow(), l.getFirst(), r.getFirst())))
                 .windowBy(Session.of(Duration.ofMillis(10)))
@@ -475,7 +475,7 @@ public class JoinTest extends AbstractOperatorTest {
         right = AssignEventTime.of(right).using(Pair::getSecond).output();
         Dataset<Pair<String, Triple<TimeInterval, String, String>>> joined =
             Join.of(left, right)
-                .by(p -> "", p -> "")
+                .by(p -> "", p -> "", String.class)
                 .using((Pair<String, Long> l, Pair<String, Long> r, Collector<Triple<TimeInterval, String, String>> c) -> {
                   TimeInterval window = (TimeInterval) c.getWindow();
                   c.getCounter("cntr").increment(10);

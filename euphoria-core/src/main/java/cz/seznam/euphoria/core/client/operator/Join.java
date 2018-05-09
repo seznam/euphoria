@@ -123,7 +123,15 @@ public class Join<LEFT, RIGHT, KEY, OUT, W extends Window>
     public <KEY> UsingBuilder<LEFT, RIGHT, KEY> by(
         UnaryFunction<LEFT, KEY> leftKeyExtractor,
         UnaryFunction<RIGHT, KEY> rightKeyExtractor) {
-      return new UsingBuilder<>(name, left, right, leftKeyExtractor, rightKeyExtractor);
+      return by(leftKeyExtractor, rightKeyExtractor, null);
+    }
+
+    public <KEY> UsingBuilder<LEFT, RIGHT, KEY> by(
+        UnaryFunction<LEFT, KEY> leftKeyExtractor,
+        UnaryFunction<RIGHT, KEY> rightKeyExtractor,
+        @Nullable Class<KEY> keyClass) {
+      return new UsingBuilder<>(
+          name, left, right, leftKeyExtractor, rightKeyExtractor, keyClass);
     }
   }
 
@@ -134,23 +142,34 @@ public class Join<LEFT, RIGHT, KEY, OUT, W extends Window>
     private final Dataset<RIGHT> right;
     private final UnaryFunction<LEFT, KEY> leftKeyExtractor;
     private final UnaryFunction<RIGHT, KEY> rightKeyExtractor;
+    @Nullable
+    private final Class<KEY> keyClass;
 
     UsingBuilder(String name,
                  Dataset<LEFT> left,
                  Dataset<RIGHT> right,
                  UnaryFunction<LEFT, KEY> leftKeyExtractor,
-                 UnaryFunction<RIGHT, KEY> rightKeyExtractor) {
+                 UnaryFunction<RIGHT, KEY> rightKeyExtractor,
+                 @Nullable Class<KEY> keyClass) {
       this.name = name;
       this.left = left;
       this.right = right;
       this.leftKeyExtractor = leftKeyExtractor;
       this.rightKeyExtractor = rightKeyExtractor;
+      this.keyClass = keyClass;
     }
 
     public <OUT> Join.WindowingBuilder<LEFT, RIGHT, KEY, OUT> using(
         BinaryFunctor<LEFT, RIGHT, OUT> functor) {
-      return new Join.WindowingBuilder<>(name, left, right,
-          leftKeyExtractor, rightKeyExtractor, functor, Join.Type.INNER);
+      return new Join.WindowingBuilder<>(
+          name,
+          left,
+          right,
+          leftKeyExtractor,
+          rightKeyExtractor,
+          keyClass,
+          functor,
+          Join.Type.INNER);
     }
   }
 
@@ -164,6 +183,8 @@ public class Join<LEFT, RIGHT, KEY, OUT, W extends Window>
     private final Dataset<RIGHT> right;
     private final UnaryFunction<LEFT, KEY> leftKeyExtractor;
     private final UnaryFunction<RIGHT, KEY> rightKeyExtractor;
+    @Nullable
+    private final Class<KEY> keyClass;
     private final BinaryFunctor<LEFT, RIGHT, OUT> joinFunc;
     private final Type type;
 
@@ -172,6 +193,7 @@ public class Join<LEFT, RIGHT, KEY, OUT, W extends Window>
                      Dataset<RIGHT> right,
                      UnaryFunction<LEFT, KEY> leftKeyExtractor,
                      UnaryFunction<RIGHT, KEY> rightKeyExtractor,
+                     @Nullable Class<KEY> keyClass,
                      BinaryFunctor<LEFT, RIGHT, OUT> joinFunc,
                      Type type) {
 
@@ -180,6 +202,7 @@ public class Join<LEFT, RIGHT, KEY, OUT, W extends Window>
       this.right = Objects.requireNonNull(right);
       this.leftKeyExtractor = Objects.requireNonNull(leftKeyExtractor);
       this.rightKeyExtractor = Objects.requireNonNull(rightKeyExtractor);
+      this.keyClass = keyClass;
       this.joinFunc = Objects.requireNonNull(joinFunc);
       this.type = Objects.requireNonNull(type);
     }
@@ -191,8 +214,16 @@ public class Join<LEFT, RIGHT, KEY, OUT, W extends Window>
 
     public <W extends Window> OutputBuilder<LEFT, RIGHT, KEY, OUT, W> windowBy(
         Windowing<Either<LEFT, RIGHT>, W> windowing) {
-      return new OutputBuilder<>(name, left, right, leftKeyExtractor,
-          rightKeyExtractor, joinFunc, type, windowing);
+      return new OutputBuilder<>(
+          name,
+          left,
+          right,
+          leftKeyExtractor,
+          rightKeyExtractor,
+          keyClass,
+          joinFunc,
+          type,
+          windowing);
     }
   }
 
@@ -204,6 +235,8 @@ public class Join<LEFT, RIGHT, KEY, OUT, W extends Window>
     private final Dataset<RIGHT> right;
     private final UnaryFunction<LEFT, KEY> leftKeyExtractor;
     private final UnaryFunction<RIGHT, KEY> rightKeyExtractor;
+    @Nullable
+    private final Class<KEY> keyClass;
     private final BinaryFunctor<LEFT, RIGHT, OUT> joinFunc;
     private final Type type;
 
@@ -215,6 +248,7 @@ public class Join<LEFT, RIGHT, KEY, OUT, W extends Window>
                   Dataset<RIGHT> right,
                   UnaryFunction<LEFT, KEY> leftKeyExtractor,
                   UnaryFunction<RIGHT, KEY> rightKeyExtractor,
+                  @Nullable Class<KEY> keyClass,
                   BinaryFunctor<LEFT, RIGHT, OUT> joinFunc,
                   Type type,
                   @Nullable Windowing<Either<LEFT, RIGHT>, W> windowing) {
@@ -223,6 +257,7 @@ public class Join<LEFT, RIGHT, KEY, OUT, W extends Window>
       this.right = Objects.requireNonNull(right);
       this.leftKeyExtractor = Objects.requireNonNull(leftKeyExtractor);
       this.rightKeyExtractor = Objects.requireNonNull(rightKeyExtractor);
+      this.keyClass = keyClass;
       this.joinFunc = Objects.requireNonNull(joinFunc);
       this.type = Objects.requireNonNull(type);
       this.windowing = windowing;
@@ -231,9 +266,19 @@ public class Join<LEFT, RIGHT, KEY, OUT, W extends Window>
     @Override
     public Dataset<Pair<KEY, OUT>> output(OutputHint... outputHints) {
       final Flow flow = left.getFlow();
-      final Join<LEFT, RIGHT, KEY, OUT, W> join = new Join<>(
-          name, flow, left, right, leftKeyExtractor,
-          rightKeyExtractor, joinFunc, type, windowing, Sets.newHashSet(outputHints));
+      final Join<LEFT, RIGHT, KEY, OUT, W> join =
+          new Join<>(
+              name,
+              flow,
+              left,
+              right,
+              leftKeyExtractor,
+              rightKeyExtractor,
+              keyClass,
+              joinFunc,
+              type,
+              windowing,
+              Sets.newHashSet(outputHints));
       flow.add(join);
       return join.output();
     }
@@ -242,11 +287,13 @@ public class Join<LEFT, RIGHT, KEY, OUT, W extends Window>
   private final Dataset<LEFT> left;
   private final Dataset<RIGHT> right;
   private final Dataset<Pair<KEY, OUT>> output;
-  private final BinaryFunctor<LEFT, RIGHT, OUT> functor;
 
   @VisibleForTesting final UnaryFunction<LEFT, KEY> leftKeyExtractor;
   @VisibleForTesting final UnaryFunction<RIGHT, KEY> rightKeyExtractor;
+  @Nullable
+  private final Class<KEY> keyClass;
 
+  private final BinaryFunctor<LEFT, RIGHT, OUT> functor;
   private final Type type;
 
   Join(String name,
@@ -254,6 +301,7 @@ public class Join<LEFT, RIGHT, KEY, OUT, W extends Window>
        Dataset<LEFT> left, Dataset<RIGHT> right,
        UnaryFunction<LEFT, KEY> leftKeyExtractor,
        UnaryFunction<RIGHT, KEY> rightKeyExtractor,
+       @Nullable Class<KEY> keyClass,
        BinaryFunctor<LEFT, RIGHT, OUT> functor,
        Type type,
        @Nullable Windowing<Either<LEFT, RIGHT>, W> windowing,
@@ -268,6 +316,7 @@ public class Join<LEFT, RIGHT, KEY, OUT, W extends Window>
     this.right = right;
     this.leftKeyExtractor = leftKeyExtractor;
     this.rightKeyExtractor = rightKeyExtractor;
+    this.keyClass = keyClass;
     this.functor = functor;
     @SuppressWarnings("unchecked")
     Dataset<Pair<KEY, OUT>> output = createOutput((Dataset) left, outputHints);
@@ -501,6 +550,11 @@ public class Join<LEFT, RIGHT, KEY, OUT, W extends Window>
 
   public UnaryFunction<RIGHT, KEY> getRightKeyExtractor() {
     return rightKeyExtractor;
+  }
+
+  @Nullable
+  public Class<KEY> getKeyClass() {
+    return keyClass;
   }
 
   public BinaryFunctor<LEFT, RIGHT, OUT> getJoiner() {
