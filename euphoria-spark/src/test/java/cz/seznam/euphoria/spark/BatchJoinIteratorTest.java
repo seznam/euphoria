@@ -103,6 +103,31 @@ public class BatchJoinIteratorTest {
   }
 
   @Test
+  public void emitsARightLonerWhenAConsecutiveSecondLeftSideComes() {
+
+    final Iterator<Tuple2<BatchJoinKey<String>, Either<String, String>>> inner =
+        asList(
+                entry("key1", LEFT, Either.left("v1")),
+                entry("key1", RIGHT, Either.right("w1")),
+                // ~ a left side with no right sides
+                entry("key2", RIGHT, Either.right("w1")),
+                // ~ a consecutive second left side
+                entry("key3", LEFT, Either.left("v1")),
+                entry("key3", RIGHT, Either.right("w1")))
+            .iterator();
+
+    final List<Tuple2<String, Tuple2<Optional<String>, Optional<String>>>> results =
+        Lists.newArrayList(new BatchJoinIterator<>(inner));
+
+    assertEquals(
+        asList(
+            entry("key1", "v1", "w1"),
+            entry("key2", Optional.empty(), "w1"),
+            entry("key3", "v1", "w1")),
+        results);
+  }
+
+  @Test
   public void emitsALeftLonerAndARightLonerWhenARightSideWithADifferentKeyComes() {
 
     final Iterator<Tuple2<BatchJoinKey<String>, Either<String, String>>> inner =
@@ -162,6 +187,28 @@ public class BatchJoinIteratorTest {
             entry("key1", "v1", "w1"),
             entry("key1", "v1", "w2"),
             entry("key2", "v1", Optional.empty())),
+        results);
+  }
+
+  @Test
+  public void lonerRightSideInTheEnd() {
+
+    final Iterator<Tuple2<BatchJoinKey<String>, Either<String, String>>> inner =
+        asList(
+                entry("key1", LEFT, Either.left("v1")),
+                entry("key1", RIGHT, Either.right("w1")),
+                entry("key1", RIGHT, Either.right("w2")),
+                entry("key2", RIGHT, Either.right("w1")))
+            .iterator();
+
+    final List<Tuple2<String, Tuple2<Optional<String>, Optional<String>>>> results =
+        Lists.newArrayList(new BatchJoinIterator<>(inner));
+
+    assertEquals(
+        asList(
+            entry("key1", "v1", "w1"),
+            entry("key1", "v1", "w2"),
+            entry("key2", Optional.empty(), "w1")),
         results);
   }
 
