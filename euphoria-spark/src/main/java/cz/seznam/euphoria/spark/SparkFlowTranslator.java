@@ -82,6 +82,10 @@ class SparkFlowTranslator {
     // ~ batch broadcast join for a very small left side
     Translation.add(translations, Join.class, new BroadcastHashJoinTranslator(),
         BroadcastHashJoinTranslator::wantTranslate);
+
+    // ~ batch broadcast join for a very small left side
+    Translation.add(translations, Join.class, new BatchJoinTranslator(),
+        BatchJoinTranslator::wantTranslate);
   }
 
   @SuppressWarnings("unchecked")

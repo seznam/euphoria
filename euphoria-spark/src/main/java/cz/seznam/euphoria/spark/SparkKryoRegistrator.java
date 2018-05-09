@@ -42,6 +42,8 @@ public abstract class SparkKryoRegistrator implements KryoRegistrator {
     // element wrappers
     kryo.register(SparkElement.class);
     kryo.register(Either.class);
+    kryo.register(BatchJoinKey.class);
+    kryo.register(BatchJoinKey.Side.class);
 
     // broadcast hash join
     kryo.register(HashMap.class);
