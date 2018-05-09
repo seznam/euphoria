@@ -24,14 +24,18 @@ class UnionTranslator implements SparkOperatorTranslator<Union> {
 
   @Override
   @SuppressWarnings("unchecked")
-  public JavaRDD<?> translate(Union operator,
-                              SparkExecutorContext context) {
+  public JavaRDD<?> translate(Union operator, SparkExecutorContext context) {
     final List<JavaRDD<?>> inputs = context.getInputs(operator);
     if (inputs.size() < 2) {
       throw new IllegalStateException("Union operator needs at least 2 inputs");
     }
-    return inputs.stream()
-        .reduce((l, r) -> ((JavaRDD<Object>) l).union((JavaRDD<Object>) r))
+    return inputs
+        .stream()
+        .reduce(
+            (l, r) ->
+                ((JavaRDD<Object>) l)
+                    .union((JavaRDD<Object>) r)
+                    .setName(operator.getName()))
         .orElseThrow(() -> new IllegalArgumentException("Unable to reduce inputs."));
   }
 }

@@ -85,7 +85,9 @@ class ReduceByKeyTranslator implements SparkOperatorTranslator<ReduceByKey> {
 
     // ~ extract key/value + timestamp from input elements and assign windows
     final JavaPairRDD<KeyedWindow<W, KEY>, VALUE> tuples =
-        input.flatMapToPair(new CompositeKeyExtractor<>(keyExtractor, valueExtractor, windowing));
+        input
+            .flatMapToPair(new CompositeKeyExtractor<>(keyExtractor, valueExtractor, windowing))
+            .setName(operator.getName() + "::extract-key-values");
 
     final AccumulatorProvider accumulatorProvider =
         new LazyAccumulatorProvider(context.getAccumulatorFactory(), context.getSettings());
@@ -95,15 +97,19 @@ class ReduceByKeyTranslator implements SparkOperatorTranslator<ReduceByKey> {
       @SuppressWarnings("unchecked")
       final ReduceFunctor<VALUE, VALUE> combiner = (ReduceFunctor<VALUE, VALUE>) reducer;
       final JavaPairRDD<KeyedWindow<W, KEY>, VALUE> combined =
-          tuples.reduceByKey(new CombinableReducer<>(combiner));
+          tuples
+              .reduceByKey(new CombinableReducer<>(combiner))
+              .setName(operator.getName() + "::combine-by-key");
 
-      return combined.map(
-          t -> {
-            final KeyedWindow<W, KEY> kw = t._1();
-            @SuppressWarnings("unchecked")
-            final OUT el = (OUT) t._2();
-            return new SparkElement<>(kw.window(), kw.timestamp(), Pair.of(kw.key(), el));
-          });
+      return combined
+          .map(
+              t -> {
+                final KeyedWindow<W, KEY> kw = t._1();
+                @SuppressWarnings("unchecked")
+                final OUT el = (OUT) t._2();
+                return new SparkElement<>(kw.window(), kw.timestamp(), Pair.of(kw.key(), el));
+              })
+          .setName(operator.getName() + "::wrap-in-spark-element");
     }
 
     final JavaPairRDD<KeyedWindow<W, KEY>, OUT> reduced;
@@ -116,33 +122,48 @@ class ReduceByKeyTranslator implements SparkOperatorTranslator<ReduceByKey> {
         reduced =
             tuples
                 .mapToPair(t -> new Tuple2<>(new KeyedWindowValue<>(t._1, t._2), Empty.get()))
+                .setName(operator.getName() + "::create-composite-key")
                 .repartitionAndSortWithinPartitions(
                     partitioner, new SecondarySortComparator<>(operator.getValueComparator()))
+                .setName(operator.getName() + "::secondary-sort")
                 .mapToPair(t -> new Tuple2<>(t._1.toKeyedWindow(), t._1.getValue()))
+                .setName(operator.getName() + "::unwrap-composite-key")
                 .mapPartitionsToPair(ReduceByKeyIterator::new)
-                .flatMapValues(new Reducer<>(reducer, accumulatorProvider));
+                .setName(operator.getName() + "::create-iterator")
+                .flatMapValues(new Reducer<>(reducer, accumulatorProvider))
+                .setName(operator.getName() + "::apply-udf");
       } else {
         // if the key is comparable, we can optimize for memory efficiency
         reduced =
             tuples
                 .repartitionAndSortWithinPartitions(partitioner)
+                .setName(operator.getName() + "::sort")
                 .mapPartitionsToPair(ReduceByKeyIterator::new)
-                .flatMapValues(new Reducer<>(reducer, accumulatorProvider));
+                .setName(operator.getName() + "::create-iterator")
+                .flatMapValues(new Reducer<>(reducer, accumulatorProvider))
+                .setName(operator.getName() + "::apply-udf");
       }
     } else {
       LOG.warn(
           "Key for ["
               + operator.getName()
               + "] is not comparable, so we can not optimize for memory efficiency.");
-      reduced = tuples.groupByKey().flatMapValues(new Reducer<>(reducer, accumulatorProvider));
+      reduced =
+          tuples
+              .groupByKey()
+              .setName(operator.getName() + "::group-by-key")
+              .flatMapValues(new Reducer<>(reducer, accumulatorProvider))
+              .setName(operator.getName() + "::apply-udf");
     }
 
-    return reduced.map(
-        t -> {
-          final KeyedWindow<W, KEY> kw = t._1();
-          final OUT el = t._2();
-          return new SparkElement<>(kw.window(), kw.timestamp(), Pair.of(kw.key(), el));
-        });
+    return reduced
+        .map(
+            t -> {
+              final KeyedWindow<W, KEY> kw = t._1();
+              final OUT el = t._2();
+              return new SparkElement<>(kw.window(), kw.timestamp(), Pair.of(kw.key(), el));
+            })
+        .setName(operator.getName() + "::wrap-in-spark-element");
   }
 
   /**

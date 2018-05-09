@@ -84,9 +84,12 @@ public class BroadcastHashJoinTranslator implements SparkOperatorTranslator<Join
         : operator.getWindowing();
 
     final JavaPairRDD<KeyedWindow, SparkElement> leftPair =
-        left.flatMapToPair(new KeyExtractor(operator.getLeftKeyExtractor(), windowing, true));
+        left.flatMapToPair(new KeyExtractor(operator.getLeftKeyExtractor(), windowing, true))
+            .setName(operator.getName() + "::extract-keys");
     final JavaPairRDD<KeyedWindow, SparkElement> rightPair =
-        right.flatMapToPair(new KeyExtractor(operator.getRightKeyExtractor(), windowing, false));
+        right
+            .flatMapToPair(new KeyExtractor(operator.getRightKeyExtractor(), windowing, false))
+            .setName(operator.getName() + "::extract-values");
 
     final JavaPairRDD<KeyedWindow, Tuple2<Optional<SparkElement>, Optional<SparkElement>>> joined;
 
@@ -98,16 +101,24 @@ public class BroadcastHashJoinTranslator implements SparkOperatorTranslator<Join
             .getExecutionEnvironment()
             .broadcast(toBroadcast(rightPair.collect()));
 
-        joined = leftPair.flatMapToPair(t -> {
-          if (broadcast.getValue().containsKey(t._1)) {
-            return Iterables.transform(broadcast.getValue().get(t._1), el ->
-                new Tuple2<>(t._1, new Tuple2<>(opt(t._2), opt(el)))).iterator();
-          } else {
-            return Collections.singletonList(
-                new Tuple2<>(t._1,
-                    new Tuple2<>(opt(t._2), Optional.<SparkElement>empty()))).iterator();
-          }
-        });
+          joined =
+              leftPair
+                  .flatMapToPair(
+                      t -> {
+                        if (broadcast.getValue().containsKey(t._1)) {
+                          return Iterables.transform(
+                                  broadcast.getValue().get(t._1),
+                                  el -> new Tuple2<>(t._1, new Tuple2<>(opt(t._2), opt(el))))
+                              .iterator();
+                        } else {
+                          return Collections.singletonList(
+                                  new Tuple2<>(
+                                      t._1,
+                                      new Tuple2<>(opt(t._2), Optional.<SparkElement>empty())))
+                              .iterator();
+                        }
+                      })
+                  .setName(operator.getName() + "::map-side-left-join");
 
         break;
       }
@@ -118,16 +129,24 @@ public class BroadcastHashJoinTranslator implements SparkOperatorTranslator<Join
             .getExecutionEnvironment()
             .broadcast(toBroadcast(leftPair.collect()));
 
-        joined = rightPair.flatMapToPair(t -> {
-          if (broadcast.getValue().containsKey(t._1)) {
-            return Iterables.transform(broadcast.getValue().get(t._1), el ->
-                new Tuple2<>(t._1, new Tuple2<>(opt(el), opt(t._2)))).iterator();
-          } else {
-            return Collections.singletonList(
-                new Tuple2<>(t._1,
-                    new Tuple2<>(Optional.<SparkElement>empty(), opt(t._2)))).iterator();
-          }
-        });
+          joined =
+              rightPair
+                  .flatMapToPair(
+                      t -> {
+                        if (broadcast.getValue().containsKey(t._1)) {
+                          return Iterables.transform(
+                                  broadcast.getValue().get(t._1),
+                                  el -> new Tuple2<>(t._1, new Tuple2<>(opt(el), opt(t._2))))
+                              .iterator();
+                        } else {
+                          return Collections.singletonList(
+                                  new Tuple2<>(
+                                      t._1,
+                                      new Tuple2<>(Optional.<SparkElement>empty(), opt(t._2))))
+                              .iterator();
+                        }
+                      })
+                  .setName(operator.getName() + "::map-side-right-join");
 
         break;
       }
@@ -136,24 +155,34 @@ public class BroadcastHashJoinTranslator implements SparkOperatorTranslator<Join
       }
     }
 
-    return joined.flatMap(new FlatMapFunctionWithCollector<>((t, collector) -> {
-      // ~ both elements have exactly the same window
-      // ~ we need to check for null values because we support both Left and Right joins
-      final SparkElement first = t._2._1.orNull();
-      final SparkElement second = t._2._2.orNull();
-      final Window window = first == null ? second.getWindow() : first.getWindow();
-      final long maxTimestamp = Math.max(
-          first == null ? window.maxTimestamp() - 1 : first.getTimestamp(),
-          second == null ? window.maxTimestamp() - 1 : second.getTimestamp());
-      collector.clear();
-      collector.setWindow(window);
-      operator.getJoiner().apply(
-          first == null ? null : first.getElement(),
-          second == null ? null : second.getElement(),
-          collector);
-      return Iterators.transform(collector.getOutputIterator(), e ->
-          new SparkElement<>(window, maxTimestamp, Pair.of(t._1.key(), e)));
-    }, new LazyAccumulatorProvider(context.getAccumulatorFactory(), context.getSettings())));
+    return joined
+        .flatMap(
+            new FlatMapFunctionWithCollector<>(
+                (t, collector) -> {
+                  // ~ both elements have exactly the same window
+                  // ~ we need to check for null values because we support both Left and Right joins
+                  final SparkElement first = t._2._1.orNull();
+                  final SparkElement second = t._2._2.orNull();
+                  final Window window = first == null ? second.getWindow() : first.getWindow();
+                  final long maxTimestamp =
+                      Math.max(
+                          first == null ? window.maxTimestamp() - 1 : first.getTimestamp(),
+                          second == null ? window.maxTimestamp() - 1 : second.getTimestamp());
+                  collector.clear();
+                  collector.setWindow(window);
+                  operator
+                      .getJoiner()
+                      .apply(
+                          first == null ? null : first.getElement(),
+                          second == null ? null : second.getElement(),
+                          collector);
+                  return Iterators.transform(
+                      collector.getOutputIterator(),
+                      e -> new SparkElement<>(window, maxTimestamp, Pair.of(t._1.key(), e)));
+                },
+                new LazyAccumulatorProvider(
+                    context.getAccumulatorFactory(), context.getSettings())))
+        .setName(operator.getName() + "::apply-udf-and-wrap-in-spark-element");
   }
 
   private static <T> Optional<T> opt(T val) {

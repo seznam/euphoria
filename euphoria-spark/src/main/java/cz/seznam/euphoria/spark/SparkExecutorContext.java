@@ -85,8 +85,9 @@ public class SparkExecutorContext {
    * than one input (single-input operator).
    *
    * @param operator the operator to inspect
-   *
-   * @return a single RDD represeting the operator only input
+   * @param <IN> type of key
+   * @param <OUT> type of output
+   * @return a single RDD representing the operator only input
    *
    * @throws RuntimeException if the given operator has no or more than one inputs
    */
