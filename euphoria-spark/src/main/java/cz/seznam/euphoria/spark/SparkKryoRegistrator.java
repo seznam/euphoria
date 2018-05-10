@@ -22,6 +22,7 @@ import cz.seznam.euphoria.core.client.dataset.windowing.Window;
 import cz.seznam.euphoria.core.client.util.Either;
 import cz.seznam.euphoria.core.client.util.Pair;
 import cz.seznam.euphoria.spark.kryo.SingletonSerializer;
+import org.apache.spark.internal.io.FileCommitProtocol;
 import org.apache.spark.serializer.KryoRegistrator;
 
 import java.util.HashMap;
@@ -33,6 +34,7 @@ public abstract class SparkKryoRegistrator implements KryoRegistrator {
 
   @Override
   public void registerClasses(Kryo kryo) {
+    try {
     // windows
     kryo.register(Window.class);
     kryo.register(TimeInterval.class);
@@ -53,7 +55,15 @@ public abstract class SparkKryoRegistrator implements KryoRegistrator {
     // misc
     kryo.register(Pair.class);
 
+    // inner spark classes, this should be fixed in spark itself
+    kryo.register(FileCommitProtocol.TaskCommitMessage.class);
+    kryo.register(Class.forName("scala.collection.immutable.Set$EmptySet$"));
+
     registerUserClasses(kryo);
+
+    } catch (ClassNotFoundException e) {
+      throw new IllegalStateException("Unable to register classes with kryo.", e);
+    }
   }
 
   /**

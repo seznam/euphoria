@@ -17,13 +17,7 @@ package cz.seznam.euphoria.hadoop.output;
 
 import cz.seznam.euphoria.core.client.io.DataSink;
 import cz.seznam.euphoria.core.client.io.Writer;
-
 import cz.seznam.euphoria.hadoop.utils.Serializer;
-import java.io.IOException;
-import java.util.Base64;
-import java.util.HashMap;
-import java.util.Map;
-
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.mapreduce.JobContext;
@@ -36,6 +30,10 @@ import org.apache.hadoop.mapreduce.TaskAttemptID;
 
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
+import java.io.IOException;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Map;
 
 /**
  * {@link OutputFormat} created from {@link DataSink}.
@@ -50,6 +48,9 @@ public class DataSinkOutputFormat<V> extends OutputFormat<NullWritable, V> {
 
   private static final String DATA_SINK = "cz.seznam.euphoria.hadoop.data-sink-serialized";
 
+  private static final Map<TaskAttemptID, Writer<?>> writers =
+      Collections.synchronizedMap(new IdentityHashMap<>());
+
   /**
    * Sets/Serializes given {@link DataSink} into Hadoop configuration. Note that
    * original configuration is modified.
@@ -62,10 +63,15 @@ public class DataSinkOutputFormat<V> extends OutputFormat<NullWritable, V> {
    * @throws IOException if serializing the given data sink fails for some reason
    */
   public static Configuration configure(Configuration conf, DataSink<?> sink) throws IOException {
-    conf.set(DATA_SINK, toBase64(sink));
+    conf.set(DATA_SINK, Serializer.toBase64(sink));
     return conf;
   }
 
+  /**
+   * Wraps {@link Writer} in Hadoop {@link RecordWriter}.
+   *
+   * @param <V> value type
+   */
   private static class HadoopRecordWriter<V> extends RecordWriter<NullWritable, V> {
 
     private final Writer<V> writer;
@@ -86,40 +92,24 @@ public class DataSinkOutputFormat<V> extends OutputFormat<NullWritable, V> {
 
   }
 
-  private static String toBase64(DataSink<?> sink) throws IOException {
-    byte[] bytes = Serializer.toBytes(sink);
-    return Base64.getEncoder().encodeToString(bytes);
-  }
-
-  private static <V> DataSink<V> fromBase64(String base64Bytes)
-      throws IOException, ClassNotFoundException {
-    byte[] bytes = Base64.getDecoder().decode(base64Bytes);
-    return Serializer.fromBytes(bytes);
-  }
-
   @Nullable
   @GuardedBy("lock")
   private DataSink<V> sink;
 
-  @GuardedBy("lock")
-  private Map<TaskAttemptID, Writer<V>> writers = new HashMap<>();
-
   private final Object lock = new Object();
 
   @Override
-  public RecordWriter<NullWritable, V> getRecordWriter(TaskAttemptContext tac)
-      throws IOException, InterruptedException {
+  public RecordWriter<NullWritable, V> getRecordWriter(TaskAttemptContext tac) throws IOException {
     return new HadoopRecordWriter<>(getWriter(tac));
   }
 
   @Override
-  public void checkOutputSpecs(JobContext jc) throws IOException, InterruptedException {
-
+  public void checkOutputSpecs(JobContext jc) {
+    // no-op
   }
 
   @Override
-  public OutputCommitter getOutputCommitter(TaskAttemptContext tac)
-      throws IOException, InterruptedException {
+  public OutputCommitter getOutputCommitter(TaskAttemptContext tac) {
     
     return new OutputCommitter() {
 
@@ -136,7 +126,7 @@ public class DataSinkOutputFormat<V> extends OutputFormat<NullWritable, V> {
       }
 
       @Override
-      public boolean needsTaskCommit(TaskAttemptContext tac) throws IOException {
+      public boolean needsTaskCommit(TaskAttemptContext tac) {
         return true;
       }
 
@@ -144,7 +134,7 @@ public class DataSinkOutputFormat<V> extends OutputFormat<NullWritable, V> {
       public void commitTask(TaskAttemptContext tac) throws IOException {
         if (innerWriter != null) {
           innerWriter.commit();
-          innerWriter.close();
+          closeWriter(tac, innerWriter);
         }
       }
 
@@ -152,34 +142,20 @@ public class DataSinkOutputFormat<V> extends OutputFormat<NullWritable, V> {
       public void abortTask(TaskAttemptContext tac) throws IOException {
         if (innerWriter != null) {
           innerWriter.rollback();
-          innerWriter.close();
+          closeWriter(tac, innerWriter);
         }
       }
 
       @Override
       public void commitJob(JobContext jobContext) throws IOException {
-        super.commitJob(jobContext);
         getSink(jobContext).commit();
       }
 
       @Override
-      public void abortJob(JobContext jobContext, JobStatus.State state)
-          throws IOException {        
-        super.abortJob(jobContext, state);
+      public void abortJob(JobContext jobContext, JobStatus.State state) throws IOException {
         getSink(jobContext).rollback();
       }
-
     };
-  }
-
-  private Writer<V> getWriter(TaskAttemptContext tac) throws IOException {
-    synchronized (lock) {
-      final TaskAttemptID tai = tac.getTaskAttemptID();
-      if (!writers.containsKey(tai)) {
-        writers.put(tai, getSink(tac).openWriter(tai.getTaskID().getId()));
-      }
-      return writers.get(tai);
-    }
   }
 
   private DataSink<V> getSink(JobContext jc) throws IOException {
@@ -192,12 +168,31 @@ public class DataSinkOutputFormat<V> extends OutputFormat<NullWritable, V> {
                   + " the configuration to output");
         }
         try {
-          sink = fromBase64(sinkBytes);
+          sink = Serializer.fromBase64(sinkBytes);
         } catch (ClassNotFoundException ex) {
           throw new IOException(ex);
         }
       }
       return sink;
+    }
+  }
+
+  @SuppressWarnings("unchecked")
+  private Writer<V> getWriter(TaskAttemptContext tac) throws IOException {
+    synchronized (lock) {
+      final TaskAttemptID tai = tac.getTaskAttemptID();
+      if (!writers.containsKey(tai)) {
+        writers.put(tai, getSink(tac).openWriter(tai.getTaskID().getId()));
+      }
+      return (Writer<V>) writers.get(tai);
+    }
+  }
+
+  private void closeWriter(TaskAttemptContext tac, Writer<V> writer) throws IOException {
+    try {
+      writer.close();
+    } finally{
+      writers.remove(tac.getTaskAttemptID());
     }
   }
 
