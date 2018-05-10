@@ -15,8 +15,8 @@
  */
 package cz.seznam.euphoria.hbase;
 
-import java.io.IOException;
 import org.apache.hadoop.hbase.Cell;
+import org.apache.hadoop.hbase.CellUtil;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HTableDescriptor;
@@ -31,30 +31,29 @@ import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Table;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
-import org.apache.hadoop.hbase.security.User;
 import org.junit.After;
 import org.junit.Before;
+
+import java.io.IOException;
 
 /**
  * Class encapsulating creation of hbase cluster.
  */
 public class HBaseTestCase {
 
-  HBaseTestingUtility utility;
   MiniHBaseCluster cluster;
   Connection conn;
   Table client;
 
   @Before
   public void setUp() throws Exception {
-    utility = new HBaseTestingUtility();
+    final HBaseTestingUtility utility = new HBaseTestingUtility();
     cluster = utility.startMiniCluster();
     additionalConf();
     conn = ConnectionFactory.createConnection(cluster.getConfiguration());
     TableName table = createTable();
     client = conn.getTable(table);
   }
-
   protected void additionalConf() throws Exception {
     // by default empty
   }
@@ -69,7 +68,7 @@ public class HBaseTestCase {
   /**
    * Create table and return its name.
    * @return name of the table created
-   * @throws IOException
+   * @throws IOException when failed to create table
    */
   TableName createTable() throws IOException {
     Admin admin = conn.getAdmin();
@@ -108,7 +107,7 @@ public class HBaseTestCase {
       Get get = new Get(b(key));
       get.addColumn(b("t"), b(key));
       Result res = client.get(get);
-      return res.getColumnLatestCell(b("t"), b(key)).getValue();
+      return CellUtil.cloneValue(res.getColumnLatestCell(b("t"), b(key)));
     } catch (IOException ex) {
       throw new RuntimeException(ex);
     }
