@@ -25,8 +25,7 @@ class FlatMapTranslator implements SparkOperatorTranslator<FlatMap> {
 
   @Override
   @SuppressWarnings("unchecked")
-  public JavaRDD<?> translate(FlatMap operator,
-                              SparkExecutorContext context) {
+  public JavaRDD<?> translate(FlatMap operator, SparkExecutorContext context) {
 
     final JavaRDD<?> input = context.getSingleInput(operator);
     final UnaryFunctor<?, ?> mapper = operator.getFunctor();
@@ -35,10 +34,13 @@ class FlatMapTranslator implements SparkOperatorTranslator<FlatMap> {
     LazyAccumulatorProvider accumulators =
         new LazyAccumulatorProvider(context.getAccumulatorFactory(), context.getSettings());
     if (evtTimeFn != null) {
-      return input.flatMap(
-              new EventTimeAssigningUnaryFunctor(mapper, evtTimeFn, accumulators));
+      return input
+          .flatMap(new EventTimeAssigningUnaryFunctor(mapper, evtTimeFn, accumulators))
+          .setName(operator.getName() + "::event-time-and-apply-udf");
     } else {
-      return input.flatMap(new UnaryFunctorWrapper(mapper, accumulators));
+      return input
+          .flatMap(new UnaryFunctorWrapper(mapper, accumulators))
+          .setName(operator.getName() + "::apply-udf");
     }
   }
 }

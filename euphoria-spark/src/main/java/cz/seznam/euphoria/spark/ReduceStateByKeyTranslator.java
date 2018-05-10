@@ -72,8 +72,10 @@ class ReduceStateByKeyTranslator implements SparkOperatorTranslator<ReduceStateB
             : operator.getWindowing();
 
     // ~ extract key/value + timestamp from input elements and assign windows
-    JavaPairRDD<KeyedWindow, Object> tuples = input.flatMapToPair(
-            new CompositeKeyExtractor(keyExtractor, valueExtractor, windowing));
+    JavaPairRDD<KeyedWindow, Object> tuples =
+        input
+            .flatMapToPair(new CompositeKeyExtractor(keyExtractor, valueExtractor, windowing))
+            .setName(operator.getName() + "::extract-key-value");
 
     // ~ if merging windowing used all windows for one key need to be
     // processed in single task, otherwise they can be freely distributed
@@ -82,15 +84,23 @@ class ReduceStateByKeyTranslator implements SparkOperatorTranslator<ReduceStateB
     Comparator<KeyedWindow> comparator = new KeyTimestampComparator();
     groupingPartitioner = new HashPartitioner(tuples.getNumPartitions());
 
-    JavaPairRDD<KeyedWindow, Object> sorted = tuples.repartitionAndSortWithinPartitions(
-            groupingPartitioner,
-            comparator);
+    JavaPairRDD<KeyedWindow, Object> sorted =
+        tuples
+            .repartitionAndSortWithinPartitions(groupingPartitioner, comparator)
+            .setName(operator.getName() + "::sort");
 
     // ~ iterate through the sorted partition and incrementally reduce states
-    return sorted.mapPartitions(
-            new StateReducer(windowing, stateFactory, stateCombiner,
-                    new SparkStateContext(settings, SparkEnv.get().serializer(), listStorageMaxElements),
-                    new LazyAccumulatorProvider(context.getAccumulatorFactory(), context.getSettings())));
+    return sorted
+        .mapPartitions(
+            new StateReducer(
+                windowing,
+                stateFactory,
+                stateCombiner,
+                new SparkStateContext(
+                    settings, SparkEnv.get().serializer(), listStorageMaxElements),
+                new LazyAccumulatorProvider(
+                    context.getAccumulatorFactory(), context.getSettings())))
+        .setName(operator.getName() + "::apply-udf");
   }
 
   /**
@@ -123,9 +133,8 @@ class ReduceStateByKeyTranslator implements SparkOperatorTranslator<ReduceStateB
     private final UnaryFunction valueExtractor;
     private final Windowing windowing;
 
-    CompositeKeyExtractor(UnaryFunction keyExtractor,
-                                 UnaryFunction valueExtractor,
-                                 Windowing windowing) {
+    CompositeKeyExtractor(
+        UnaryFunction keyExtractor, UnaryFunction valueExtractor, Windowing windowing) {
       this.keyExtractor = keyExtractor;
       this.valueExtractor = valueExtractor;
       this.windowing = windowing;

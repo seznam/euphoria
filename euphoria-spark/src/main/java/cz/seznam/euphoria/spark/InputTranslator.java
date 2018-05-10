@@ -37,14 +37,17 @@ class InputTranslator implements SparkOperatorTranslator<FlowUnfolder.InputOpera
       Configuration conf = DataSourceInputFormat.configure(new Configuration(), ds);
 
       @SuppressWarnings("unchecked")
-      JavaPairRDD<Object, Object> pairs = context.getExecutionEnvironment().newAPIHadoopRDD(
-              conf,
-              DataSourceInputFormat.class,
-              Object.class,
-              Object.class);
+      JavaPairRDD<Object, Object> pairs =
+          context
+              .getExecutionEnvironment()
+              .newAPIHadoopRDD(conf, DataSourceInputFormat.class, Object.class, Object.class)
+              .setName(operator.getName() + "::read");
 
       // map values to WindowedElement
-      return pairs.values().map(v -> new SparkElement<>(GlobalWindowing.Window.get(), 0L,  v));
+      return pairs
+          .values()
+          .map(v -> new SparkElement<>(GlobalWindowing.Window.get(), 0L,  v))
+          .setName(operator.getName() + "::windowed-element");
 
     } catch (IOException e) {
       throw new RuntimeException(e);

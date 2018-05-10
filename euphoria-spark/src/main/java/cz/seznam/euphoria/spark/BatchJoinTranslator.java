@@ -93,17 +93,18 @@ class BatchJoinTranslator implements SparkOperatorTranslator<Join> {
 
     final JavaPairRDD<BatchJoinKey<Object>, Either<SparkElement, SparkElement>> leftPair =
         left.flatMapToPair(
-            se -> {
-              final Object key = operator.getLeftKeyExtractor().apply(se.getElement());
-              return selectPartitionIdxsForKey(key, numPartitions, NUM_DUPLICITIES)
-                  .stream()
-                  .map(
-                      partitionIdx ->
-                          new Tuple2<>(
-                              new BatchJoinKey<>(key, BatchJoinKey.Side.LEFT, partitionIdx),
-                              Either.<SparkElement, SparkElement>left(se)))
-                  .iterator();
-            });
+                se -> {
+                  final Object key = operator.getLeftKeyExtractor().apply(se.getElement());
+                  return selectPartitionIdxsForKey(key, numPartitions, NUM_DUPLICITIES)
+                      .stream()
+                      .map(
+                          partitionIdx ->
+                              new Tuple2<>(
+                                  new BatchJoinKey<>(key, BatchJoinKey.Side.LEFT, partitionIdx),
+                                  Either.<SparkElement, SparkElement>left(se)))
+                      .iterator();
+                })
+            .setName(operator.getName() + "::wrap-keys");
 
     final JavaPairRDD<BatchJoinKey<Object>, Either<SparkElement, SparkElement>> rightPair =
         right.mapToPair(
@@ -116,13 +117,18 @@ class BatchJoinTranslator implements SparkOperatorTranslator<Join> {
                   new BatchJoinKey<>(key, BatchJoinKey.Side.RIGHT, partitionIdx), Either.right(se));
             });
 
+    rightPair.setName(operator.getName() + "::wrap-values");
+
     final Partitioner partitioner = new BatchPartitioner(numPartitions);
 
     return leftPair
         .union(rightPair)
+        .setName(operator.getName() + "::union-inputs")
         .repartitionAndSortWithinPartitions(partitioner)
+        .setName(operator.getName() + "::sort-by-key-and-side")
         .mapPartitions(
             iterator -> new JoinIterator<>(new BatchJoinIterator<>(iterator), operator.getType()))
+        .setName(operator.getName() + "::create-iterator")
         .flatMap(
             new FlatMapFunctionWithCollector<>(
                 (t, collector) -> {
@@ -149,7 +155,8 @@ class BatchJoinTranslator implements SparkOperatorTranslator<Join> {
                               GlobalWindowing.Window.get(), maxTimestamp, Pair.of(t._1, e)));
                 },
                 new LazyAccumulatorProvider(
-                    context.getAccumulatorFactory(), context.getSettings())));
+                    context.getAccumulatorFactory(), context.getSettings())))
+        .setName(operator.getName() + "::apply-udf-and-wrap-in-spark-element");
   }
 
   private static <KEY> List<Integer> selectPartitionIdxsForKey(
