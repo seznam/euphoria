@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
+import java.util.Base64;
 
 /**
  * Java serializer.
@@ -67,4 +68,14 @@ public class Serializer {
     return (T) ois.readObject();
   }
 
+  public static String toBase64(Serializable object) throws IOException {
+    byte[] bytes = Serializer.toBytes(object);
+    return Base64.getEncoder().encodeToString(bytes);
+  }
+
+  public static <V extends Serializable> V fromBase64(String base64Bytes)
+      throws IOException, ClassNotFoundException {
+    byte[] bytes = Base64.getDecoder().decode(base64Bytes);
+    return Serializer.fromBytes(bytes);
+  }
 }
