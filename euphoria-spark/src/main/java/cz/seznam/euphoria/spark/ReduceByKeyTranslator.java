@@ -134,7 +134,6 @@ class ReduceByKeyTranslator implements SparkOperatorTranslator<ReduceByKey> {
           "Key for ["
               + operator.getName()
               + "] is not comparable, so we can not optimize for memory efficiency.");
-      // we can n
       reduced = tuples.groupByKey().flatMapValues(new Reducer<>(reducer, accumulatorProvider));
     }
 

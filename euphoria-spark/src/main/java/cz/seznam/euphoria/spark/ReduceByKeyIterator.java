@@ -23,13 +23,13 @@ import scala.Tuple2;
 import java.util.Iterator;
 
 /**
- * Transform stream of sorted key values into stream of value iterators for each key
+ * Transform stream of sorted key values into stream of value iterators for each key. This iterator
+ * can be iterated only once!
  *
  * @param <KEY> type of key iterator emits
  * @param <VALUE> type of value iterator emits
  */
-class ReduceByKeyIterator<KEY, VALUE>
-    extends AbstractIterator<Tuple2<KEY, Iterable<VALUE>>> {
+class ReduceByKeyIterator<KEY, VALUE> extends AbstractIterator<Tuple2<KEY, Iterable<VALUE>>> {
 
   private final PeekingIterator<Tuple2<KEY, VALUE>> inner;
 

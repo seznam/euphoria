@@ -16,7 +16,6 @@
 package cz.seznam.euphoria.spark;
 
 import cz.seznam.euphoria.core.client.dataset.windowing.Window;
-import cz.seznam.euphoria.shadow.com.google.common.base.Preconditions;
 
 import java.util.Objects;
 
@@ -72,9 +71,6 @@ public class KeyedWindow<W extends Window, K> implements Comparable<KeyedWindow<
   @Override
   @SuppressWarnings("unchecked")
   public int compareTo(KeyedWindow<W, K> o) {
-    Preconditions.checkArgument(
-        o.key instanceof Comparable,
-        "Key is not comparable, this is probably a bug in euphoria-spark translation.");
     final int windowCompare = window.compareTo(o.window);
     if (windowCompare == 0) {
       return ((Comparable) key).compareTo(o.key);
