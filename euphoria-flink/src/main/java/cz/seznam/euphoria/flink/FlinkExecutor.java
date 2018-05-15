@@ -287,15 +287,14 @@ public class FlinkExecutor implements Executor {
    * @return this instance (for method chaining purposes)
    */
   public FlinkExecutor registerClass(Class<?> cls) {
-    registeredClasses.put(cls, null);
-    return this;
+    return this.registerClass(cls, null);
   }
 
   /**
    * Pre-register given class to flink for serialization purposes.
    *
    * @param cls the type of objects which flink is supposed to serialize/deserialize
-   * @param classSeriliazer serilizer
+   * @param classSeriliazer serializer
    * @return this instance (for method chaining purposes)
    */
   public FlinkExecutor registerClass(Class<?> cls, Class<? extends Serializer> classSeriliazer) {
