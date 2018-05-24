@@ -31,6 +31,9 @@ import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.Optional;
 import org.apache.spark.api.java.function.PairFlatMapFunction;
 import org.apache.spark.broadcast.Broadcast;
+import org.apache.spark.util.SizeEstimator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import scala.Tuple2;
 
 import java.util.ArrayList;
@@ -56,6 +59,7 @@ import static cz.seznam.euphoria.core.executor.util.OperatorTranslator.wantTrans
  */
 public class BroadcastHashJoinTranslator implements SparkOperatorTranslator<Join> {
 
+  private static final Logger LOG = LoggerFactory.getLogger(BroadcastHashJoinTranslator.class);
 
   static boolean wantTranslate(Join o) {
     return wantTranslateBroadcastHashJoin(o);
@@ -196,6 +200,7 @@ public class BroadcastHashJoinTranslator implements SparkOperatorTranslator<Join
       final List<SparkElement> elements = res.computeIfAbsent(t._1, k -> new ArrayList<>());
       elements.add(t._2);
     });
+    LOG.info("Broadcasting dataset of size {}B.", SizeEstimator.estimate(res));
     return res;
   }
 
