@@ -30,6 +30,7 @@ import org.apache.hadoop.mapreduce.OutputFormat;
 import org.apache.hadoop.mapreduce.RecordWriter;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.hadoop.mapreduce.TaskAttemptID;
+import org.apache.hadoop.mapreduce.lib.output.LazyOutputFormat;
 
 import javax.annotation.concurrent.GuardedBy;
 import java.io.IOException;
@@ -51,7 +52,20 @@ public class HadoopSink<K, V> implements DataSink<Pair<K, V>> {
 
   public HadoopSink(Class<? extends OutputFormat<K, V>> outputFormatClass,
                     Configuration conf) {
-    this.outputFormatClass = Objects.requireNonNull(outputFormatClass);
+    this(outputFormatClass, conf, false);
+  }
+
+  @SuppressWarnings("unchecked")
+  public HadoopSink(Class<? extends OutputFormat<K, V>> outputFormatClass,
+      Configuration conf, boolean useLazyOutputFormat) {
+    Objects.requireNonNull(outputFormatClass);
+    if (useLazyOutputFormat) {
+      this.outputFormatClass = (Class) LazyOutputFormat.class;
+      conf.setClass(LazyOutputFormat.OUTPUT_FORMAT, outputFormatClass, OutputFormat.class);
+    } else {
+      this.outputFormatClass = outputFormatClass;
+    }
+
     this.conf = new SerializableWritable<>(Objects.requireNonNull(conf));
     this.jobID = new SerializableWritable<>(HadoopUtils.getJobID());
   }

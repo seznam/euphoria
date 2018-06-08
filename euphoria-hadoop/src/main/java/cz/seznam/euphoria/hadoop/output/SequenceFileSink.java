@@ -35,6 +35,7 @@ import javax.annotation.Nullable;
  *    .outputPath(outputDir)
  *    .withConfiguration( hadoopConfig) // optional (must be before withCompression)
  *    .withCompression( CompressionClass, CompressionType) //optional
+ *    .withLazyOutputFormat() // optional
  *    .build();
  * }</pre>
  *
@@ -168,6 +169,7 @@ public class SequenceFileSink<K, V> extends HadoopSink<K, V> {
     private final Class<? extends CompressionCodec> compressionClass;
     @Nullable
     private final SequenceFile.CompressionType compressionType;
+    private boolean useLazyOutputFormat = false;
 
     SinkBuilder(
         Class<K> keyClass,
@@ -184,6 +186,17 @@ public class SequenceFileSink<K, V> extends HadoopSink<K, V> {
       this.configuration = configuration;
       this.compressionClass = compressionClass;
       this.compressionType = compressionType;
+    }
+
+    /**
+     * Optional setter for {@link org.apache.hadoop.mapreduce.lib.output.LazyOutputFormat}. If used,
+     * {@link SequenceFileOutputFormat} won't create empty files. Default value is false;
+     *
+     * @return this instance of SinkBuilder
+     */
+    public SinkBuilder withLazyOutputFormat() {
+      this.useLazyOutputFormat = true;
+      return this;
     }
 
     public SequenceFileSink<K, V> build() {
@@ -205,7 +218,8 @@ public class SequenceFileSink<K, V> extends HadoopSink<K, V> {
           keyClass,
           valueType,
           outputPath,
-          newConfiguration);
+          newConfiguration,
+          useLazyOutputFormat);
     }
   }
 
@@ -245,8 +259,33 @@ public class SequenceFileSink<K, V> extends HadoopSink<K, V> {
   @SuppressWarnings("unchecked")
   public SequenceFileSink(Class<K> keyType, Class<V> valueType,
                           String path, Configuration hadoopConfig) {
-    super((Class) SequenceFileOutputFormat.class,
-        wrap(hadoopConfig, path, keyType.getName(), valueType.getName()));
+    this(keyType, valueType, path, hadoopConfig, false);
+  }
+
+  /**
+   * Constructs a data sink based on hadoop's {@link SequenceFileOutputFormat}. The specified path
+   * is automatically set/overridden in the given hadoop configuration as well as the key and value
+   * types.
+   *
+   * @param keyType the class representing the type of the keys emitted
+   * @param valueType the class representing the type of the values emitted
+   * @param path the destination where to save the output
+   * @param hadoopConfig the hadoop configuration to build on top of
+   * @param useLazyOutputFormat whether to use {@link
+   *     org.apache.hadoop.mapreduce.lib.output.LazyOutputFormat} (won't create empty files)
+   * @throws NullPointerException if any of the parameters is {@code null}
+   */
+  @SuppressWarnings("unchecked")
+  private SequenceFileSink(
+      Class<K> keyType,
+      Class<V> valueType,
+      String path,
+      Configuration hadoopConfig,
+      boolean useLazyOutputFormat) {
+    super(
+        (Class) SequenceFileOutputFormat.class,
+        wrap(hadoopConfig, path, keyType.getName(), valueType.getName()),
+        useLazyOutputFormat);
   }
 
   private static Configuration wrap(Configuration conf,

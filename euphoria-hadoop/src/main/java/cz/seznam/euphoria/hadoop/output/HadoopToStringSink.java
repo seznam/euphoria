@@ -49,7 +49,8 @@ public class HadoopToStringSink<T> implements DataSink<T> {
   /**
    * Constructs a data sink based on hadoop's {@link TextOutputFormat}.
    * The specified path is automatically set/overridden in the given hadoop
-   * configuration.
+   * configuration. Writer can create empty files
+   * ({@link org.apache.hadoop.mapreduce.lib.output.LazyOutputFormat} is not used).
    *
    * @param path the path to read data from
    * @param hadoopConfig the hadoop configuration to build on top of
@@ -58,7 +59,22 @@ public class HadoopToStringSink<T> implements DataSink<T> {
    */
   @SuppressWarnings("unchecked")
   public HadoopToStringSink(String path, Configuration hadoopConfig) {
-    impl = new HadoopTextFileSink<>(path, hadoopConfig);
+    this(path, hadoopConfig, false);
+  }
+
+  /**
+   * Constructs a data sink based on hadoop's {@link TextOutputFormat}. The specified path is
+   * automatically set/overridden in the given hadoop configuration.
+   *
+   * @param path the path to read data from
+   * @param hadoopConfig the hadoop configuration to build on top of
+   * @param useLazyOutputFormat whether to use {@link
+   *     org.apache.hadoop.mapreduce.lib.output.LazyOutputFormat} (won't create empty files)
+   * @throws NullPointerException if any of the parameters is {@code null}
+   */
+  @SuppressWarnings("unchecked")
+  public HadoopToStringSink(String path, Configuration hadoopConfig, boolean useLazyOutputFormat) {
+    impl = new HadoopTextFileSink<>(path, hadoopConfig, useLazyOutputFormat);
   }
 
   @Override
