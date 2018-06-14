@@ -59,6 +59,8 @@ public class HadoopSink<K, V> implements DataSink<Pair<K, V>> {
   public HadoopSink(Class<? extends OutputFormat<K, V>> outputFormatClass,
       Configuration conf, boolean useLazyOutputFormat) {
     Objects.requireNonNull(outputFormatClass);
+    Objects.requireNonNull(conf);
+
     if (useLazyOutputFormat) {
       this.outputFormatClass = (Class) LazyOutputFormat.class;
       conf.setClass(LazyOutputFormat.OUTPUT_FORMAT, outputFormatClass, OutputFormat.class);
@@ -66,7 +68,7 @@ public class HadoopSink<K, V> implements DataSink<Pair<K, V>> {
       this.outputFormatClass = outputFormatClass;
     }
 
-    this.conf = new SerializableWritable<>(Objects.requireNonNull(conf));
+    this.conf = new SerializableWritable<>(conf);
     this.jobID = new SerializableWritable<>(HadoopUtils.getJobID());
   }
 
