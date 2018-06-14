@@ -76,7 +76,7 @@ public class HadoopSinkTest<I, O, S extends DataSource<I>, T extends DataSink<I>
   public static List<Object[]> testParameters() {
     return Arrays.asList(
         new Object[][] {
-          // DataSinkTester, useLazyOutputFormat, expectedNumberOfReduceOutputs
+          // testName, DataSinkTester, useLazyOutputFormat, expectedNumberOfReduceOutputs
           {"SequenceFileSink", new SequenceFileSinkTester(), false, 5},
           {"SequenceFileSink - lazy", new SequenceFileSinkTester(), true, 4},
           {"HadoopTextFileSink", new HadoopTextFileSinkTester(), false, 5},
@@ -181,14 +181,20 @@ public class HadoopSinkTest<I, O, S extends DataSource<I>, T extends DataSink<I>
     @Override
     public SequenceFileSink<Text, LongWritable> buildSink(
         String outputDir, Configuration conf, boolean useLazyOutputFormat) {
-      SinkBuilder<Text, LongWritable> sinkBuilder =
-          SequenceFileSink.of(Text.class, LongWritable.class)
-              .outputPath(outputDir)
-              .withConfiguration(conf)
-              .withCompression(DeflateCodec.class, SequenceFile.CompressionType.BLOCK);
+      final SequenceFileSink.WithLazyOutputFormatBuilder<Text, LongWritable>
+          withLazyOutputFormatBuilder =
+              SequenceFileSink.of(Text.class, LongWritable.class).outputPath(outputDir);
+      final SequenceFileSink.WithCompressionBuilder<Text, LongWritable> withCompressionBuilder;
       if (useLazyOutputFormat) {
-        sinkBuilder = sinkBuilder.withLazyOutputFormat();
+        withCompressionBuilder =
+            withLazyOutputFormatBuilder.withLazyOutputFormat().withConfiguration(conf);
+      } else {
+        withCompressionBuilder = withLazyOutputFormatBuilder.withConfiguration(conf);
       }
+      SinkBuilder<Text, LongWritable> sinkBuilder =
+          withCompressionBuilder.withCompression(
+              DeflateCodec.class, SequenceFile.CompressionType.BLOCK);
+
       return sinkBuilder.build();
     }
 
