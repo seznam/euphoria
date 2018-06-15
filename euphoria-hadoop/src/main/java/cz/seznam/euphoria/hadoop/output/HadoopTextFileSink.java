@@ -42,7 +42,8 @@ public class HadoopTextFileSink<K, V> extends HadoopSink<K, V> {
   /**
    * Constructs a data sink based on hadoop's {@link TextOutputFormat}.
    * The specified path is automatically set/overridden in the given hadoop
-   * configuration.
+   * configuration. Writer can create empty files
+   * ({@link org.apache.hadoop.mapreduce.lib.output.LazyOutputFormat} is not used).
    *
    * @param path the path to read data from
    * @param hadoopConfig the hadoop configuration to build on top of
@@ -51,7 +52,22 @@ public class HadoopTextFileSink<K, V> extends HadoopSink<K, V> {
    */
   @SuppressWarnings("unchecked")
   public HadoopTextFileSink(String path, Configuration hadoopConfig) {
-    super((Class) TextOutputFormat.class, hadoopConfig);
+    this(path, hadoopConfig, false);
+  }
+
+  /**
+   * Constructs a data sink based on hadoop's {@link TextOutputFormat}. The specified path is
+   * automatically set/overridden in the given hadoop configuration.
+   *
+   * @param path the path to read data from
+   * @param hadoopConfig the hadoop configuration to build on top of
+   * @param useLazyOutputFormat whether to use {@link
+   *     org.apache.hadoop.mapreduce.lib.output.LazyOutputFormat} (won't create empty files)
+   * @throws NullPointerException if any of the parameters is {@code null}
+   */
+  @SuppressWarnings("unchecked")
+  public HadoopTextFileSink(String path, Configuration hadoopConfig, boolean useLazyOutputFormat) {
+    super((Class) TextOutputFormat.class, hadoopConfig, useLazyOutputFormat);
     hadoopConfig.set(FileOutputFormat.OUTDIR, path);
   }
 }
