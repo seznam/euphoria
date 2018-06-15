@@ -25,7 +25,6 @@ import cz.seznam.euphoria.core.executor.Executor;
 import cz.seznam.euphoria.core.util.ExceptionUtils;
 import cz.seznam.euphoria.executor.local.LocalExecutor;
 import cz.seznam.euphoria.hadoop.HadoopUtils;
-import cz.seznam.euphoria.hadoop.output.SequenceFileSink.SinkBuilder;
 import cz.seznam.euphoria.testing.DatasetAssert;
 import java.nio.file.Paths;
 import java.util.function.Function;
@@ -181,21 +180,15 @@ public class HadoopSinkTest<I, O, S extends DataSource<I>, T extends DataSink<I>
     @Override
     public SequenceFileSink<Text, LongWritable> buildSink(
         String outputDir, Configuration conf, boolean useLazyOutputFormat) {
-      final SequenceFileSink.WithLazyOutputFormatBuilder<Text, LongWritable>
-          withLazyOutputFormatBuilder =
-              SequenceFileSink.of(Text.class, LongWritable.class).outputPath(outputDir);
-      final SequenceFileSink.WithCompressionBuilder<Text, LongWritable> withCompressionBuilder;
+      SequenceFileSink.Buildable<Text, LongWritable> builder =
+          SequenceFileSink.of(Text.class, LongWritable.class)
+              .outputPath(outputDir)
+              .withConfiguration(conf)
+              .withCompression(DeflateCodec.class, SequenceFile.CompressionType.BLOCK);
       if (useLazyOutputFormat) {
-        withCompressionBuilder =
-            withLazyOutputFormatBuilder.withLazyOutputFormat().withConfiguration(conf);
-      } else {
-        withCompressionBuilder = withLazyOutputFormatBuilder.withConfiguration(conf);
+        builder = builder.withLazyOutputFormat();
       }
-      SinkBuilder<Text, LongWritable> sinkBuilder =
-          withCompressionBuilder.withCompression(
-              DeflateCodec.class, SequenceFile.CompressionType.BLOCK);
-
-      return sinkBuilder.build();
+      return builder.build();
     }
 
     @Override

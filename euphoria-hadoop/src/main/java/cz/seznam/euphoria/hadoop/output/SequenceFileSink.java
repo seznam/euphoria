@@ -15,27 +15,26 @@
  */
 package cz.seznam.euphoria.hadoop.output;
 
+import java.util.Objects;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.SequenceFile;
-import org.apache.hadoop.io.SequenceFile.CompressionType;
 import org.apache.hadoop.io.compress.CompressionCodec;
 import org.apache.hadoop.mapreduce.JobContext;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.SequenceFileOutputFormat;
 
-import javax.annotation.Nullable;
-
 /**
- * A convenience data sink to produce output through hadoop's sequence file for a
- * specified key and value type.
+ * A convenience data sink to produce output through hadoop's sequence file for a specified key and
+ * value type.
  *
- * Example:
+ * <p>Example:
+ *
  * <pre>{@code
  * SequenceFileSink
  *    .of(KeyClass, ValueClass)
  *    .outputPath(outputDir)
- *    .withLazyOutputFormat() // optional (must be before withConfiguration)
- *    .withConfiguration( hadoopConfig) // optional (must be before withCompression)
+ *    .withLazyOutputFormat() // optional
+ *    .withConfiguration( hadoopConfig) // optional
  *    .withCompression( CompressionClass, CompressionType) //optional
  *    .build();
  * }</pre>
@@ -52,206 +51,56 @@ public class SequenceFileSink<K, V> extends HadoopSink<K, V> {
    * @param <V> type of the values emitted
    * @return OutputPathBuilder
    */
-  public static <K, V> OutputPathBuilder<K, V> of(Class<K> keyClass, Class<V> valueClass) {
-    return new OutputPathBuilder<>(keyClass, valueClass);
+  public static <K, V> OutputPathBuildable<K, V> of(Class<K> keyClass, Class<V> valueClass) {
+    return new Builder<>(keyClass, valueClass);
   }
 
-  public static class OutputPathBuilder<K, V> {
+  public static class Builder<K, V> implements OutputPathBuildable<K, V>, Buildable<K, V> {
 
     private final Class<K> keyClass;
     private final Class<V> valueClass;
 
-    OutputPathBuilder(Class<K> keyClass, Class<V> valueClass) {
-      this.keyClass = keyClass;
-      this.valueClass = valueClass;
+    private String outputPath = null;
+    private boolean useLazyOutputFormat = false;
+    private Configuration configuration = null;
+    private Class<? extends CompressionCodec> compressionClass = null;
+    private SequenceFile.CompressionType compressionType = null;
+
+    public Builder(Class<K> keyClass, Class<V> valueClass) {
+      this.keyClass = Objects.requireNonNull(keyClass);
+      this.valueClass = Objects.requireNonNull(valueClass);
     }
 
-    /**
-     * @param outputPath the destination where to save the output
-     * @return Builder with optional setters
-     */
-    public WithLazyOutputFormatBuilder<K, V> outputPath(String outputPath) {
-      return new WithLazyOutputFormatBuilder<>(keyClass, valueClass, outputPath);
-    }
-  }
-
-  public static class WithLazyOutputFormatBuilder<K, V> {
-
-    private final Class<K> keyClass;
-    private final Class<V> valueClass;
-    private final String outputPath;
-
-    WithLazyOutputFormatBuilder(Class<K> keyClass, Class<V> valueClass, String outputPath) {
-      this.keyClass = keyClass;
-      this.valueClass = valueClass;
-      this.outputPath = outputPath;
+    @Override
+    public Buildable<K, V> outputPath(String outputPath) {
+      this.outputPath = Objects.requireNonNull(outputPath);
+      return this;
     }
 
-    /**
-     * Optional setter for {@link org.apache.hadoop.mapreduce.lib.output.LazyOutputFormat}. If used,
-     * {@link SequenceFileOutputFormat} won't create empty files. Default value is false;
-     *
-     * @return this instance of SinkBuilder
-     */
-    public WithConfigurationBuilder<K, V> withLazyOutputFormat() {
-      return new WithConfigurationBuilder<>(keyClass, valueClass, outputPath, true);
+    @Override
+    public Buildable<K, V> withConfiguration(Configuration configuration) {
+      this.configuration = Objects.requireNonNull(configuration);
+      return this;
     }
 
-    /**
-     * Optional setter if not used it will be created new hadoop configuration.
-     *
-     * @param configuration the hadoop configuration to build on top of
-     * @return Builder
-     */
-    public WithCompressionBuilder<K, V> withConfiguration(Configuration configuration) {
-      return new WithCompressionBuilder<>(keyClass, valueClass, outputPath, false, configuration);
-    }
-
-    /**
-     * Optional setter for compression
-     *
-     * @param compressionClass COMPRESS_CODEC class
-     * @param compressionType COMPRESS_TYPE value
-     * @return Builder
-     */
-    public SinkBuilder<K, V> withCompression(
+    @Override
+    public Buildable<K, V> withCompression(
         Class<? extends CompressionCodec> compressionClass,
         SequenceFile.CompressionType compressionType) {
-      return withConfiguration(null).withCompression(compressionClass, compressionType);
+      this.compressionClass = Objects.requireNonNull(compressionClass);
+      this.compressionType = Objects.requireNonNull(compressionType);
+      return this;
     }
 
+    @Override
+    public Buildable<K, V> withLazyOutputFormat() {
+      this.useLazyOutputFormat = true;
+      return this;
+    }
+
+    @Override
     public SequenceFileSink<K, V> build() {
-      return withConfiguration(null).withCompression(null, null).build();
-    }
-  }
-
-  public static class WithConfigurationBuilder<K, V> {
-
-    private final Class<K> keyClass;
-    private final Class<V> valueClass;
-    private final String outputPath;
-    private final boolean useLazyOutputFormat;
-
-    WithConfigurationBuilder(
-        Class<K> keyClass,
-        Class<V> valueType,
-        String outputPath,
-        boolean useLazyOutputFormat) {
-      this.keyClass = keyClass;
-      this.valueClass = valueType;
-      this.outputPath = outputPath;
-      this.useLazyOutputFormat = useLazyOutputFormat;
-    }
-
-    /**
-     * Optional setter if not used it will be created new hadoop configuration.
-     * @param configuration the hadoop configuration to build on top of
-     * @return Builder
-     */
-    public WithCompressionBuilder<K, V> withConfiguration(Configuration configuration) {
-      return new WithCompressionBuilder<>(keyClass, valueClass, outputPath, useLazyOutputFormat,
-          configuration);
-    }
-
-    /**
-     * Optional setter for compression
-     * @param compressionClass COMPRESS_CODEC class
-     * @param compressionType COMPRESS_TYPE value
-     * @return Builder
-     */
-    public SinkBuilder<K, V> withCompression(
-        Class<? extends CompressionCodec> compressionClass,
-        SequenceFile.CompressionType compressionType) {
-      return withConfiguration(null).withCompression(compressionClass, compressionType);
-    }
-
-    public SequenceFileSink<K, V> build() {
-      return withCompression(null, null).build();
-    }
-  }
-
-  public static class WithCompressionBuilder<K, V> {
-
-    private final Class<K> keyType;
-    private final Class<V> valueType;
-    private final String outputPath;
-    private final boolean useLazyOutputFormat;
-    @Nullable
-    private final Configuration configuration;
-
-    WithCompressionBuilder(
-        Class<K> keyType,
-        Class<V> valueType,
-        String outputPath,
-        boolean useLazyOutputFormat,
-        @Nullable Configuration configuration) {
-      this.keyType = keyType;
-      this.valueType = valueType;
-      this.outputPath = outputPath;
-      this.useLazyOutputFormat = useLazyOutputFormat;
-      this.configuration = configuration;
-    }
-
-    /**
-     * Optional setter for compression
-     * @param compressionClass COMPRESS_CODEC class
-     * @param compressionType COMPRESS_TYPE value
-     * @return Builder
-     */
-    public SinkBuilder<K, V> withCompression(
-        Class<? extends CompressionCodec> compressionClass,
-        SequenceFile.CompressionType compressionType) {
-      return new SinkBuilder<>(
-          keyType,
-          valueType,
-          outputPath,
-          useLazyOutputFormat, configuration,
-          compressionClass,
-          compressionType);
-    }
-
-    public SequenceFileSink<K, V> build() {
-      return withCompression(null, null).build();
-    }
-  }
-
-
-  public static class SinkBuilder<K, V> {
-
-    private final Class<K> keyClass;
-    private final Class<V> valueType;
-    private final String outputPath;
-    private final boolean useLazyOutputFormat;
-    @Nullable
-    private final Configuration configuration;
-    @Nullable
-    private final Class<? extends CompressionCodec> compressionClass;
-    @Nullable
-    private final SequenceFile.CompressionType compressionType;
-
-    SinkBuilder(
-        Class<K> keyClass,
-        Class<V> valueType,
-        String outputPath,
-        boolean useLazyOutputFormat,
-        @Nullable Configuration configuration,
-        @Nullable Class<? extends CompressionCodec> compressionClass,
-        @Nullable CompressionType compressionType
-    ) {
-
-      this.keyClass = keyClass;
-      this.valueType = valueType;
-      this.outputPath = outputPath;
-      this.useLazyOutputFormat = useLazyOutputFormat;
-      this.configuration = configuration;
-      this.compressionClass = compressionClass;
-      this.compressionType = compressionType;
-    }
-
-    public SequenceFileSink<K, V> build() {
-      final Configuration newConfiguration = configuration == null
-          ? new Configuration()
-          : new Configuration(configuration);
+      final Configuration newConfiguration = wrap(configuration);
 
       if (compressionClass != null && compressionType != null) {
         newConfiguration.setBoolean(
@@ -260,55 +109,85 @@ public class SequenceFileSink<K, V> extends HadoopSink<K, V> {
             FileOutputFormat.COMPRESS_TYPE, compressionType.toString());
         newConfiguration.setClass(
             FileOutputFormat.COMPRESS_CODEC, compressionClass, CompressionCodec.class);
-
       }
 
       return new SequenceFileSink<>(
-          keyClass,
-          valueType,
-          outputPath,
-          newConfiguration,
-          useLazyOutputFormat);
+          keyClass, valueClass, outputPath, newConfiguration, useLazyOutputFormat);
     }
   }
 
+  public interface OutputPathBuildable<K, V> {
 
-  /**
-   * Convenience constructor delegating to
-   * {@link #SequenceFileSink(Class, Class, String, Configuration)} with a newly
-   * created hadoop configuration.
-   *
-   * @param keyType the type of the key consumed and emitted to the output
-   *         by the new data sink
-   * @param valueType the type of the value consumed and emitted to the output
-   *         by the new data sink
-   * @param path the destination where to place the output to
-   *
-   * @deprecated will be in next release private, use {@link #of(Class, Class)} instead
-   */
-  public SequenceFileSink(Class<K> keyType, Class<V> valueType, String path) {
-    this(keyType, valueType, path, new Configuration());
+    /**
+     * Mandatory output path.
+     *
+     * @param outputPath the destination where to save the output
+     * @return Builder with optional setters
+     */
+    Buildable<K, V> outputPath(String outputPath);
+  }
+
+  public interface Buildable<K, V> {
+
+    /**
+     * Optional setter if not used it will be created new hadoop configuration.
+     *
+     * @param configuration the hadoop configuration to build on top of
+     * @return Builder
+     */
+    Buildable<K, V> withConfiguration(Configuration configuration);
+
+    /**
+     * Optional setter for compression
+     *
+     * @param compressionClass COMPRESS_CODEC class
+     * @param compressionType COMPRESS_TYPE value
+     * @return Builder
+     */
+    Buildable<K, V> withCompression(
+        Class<? extends CompressionCodec> compressionClass,
+        SequenceFile.CompressionType compressionType);
+
+    /**
+     * Optional setter for {@link org.apache.hadoop.mapreduce.lib.output.LazyOutputFormat}. If used,
+     * {@link SequenceFileOutputFormat} won't create empty files. Default value is false;
+     *
+     * @return this instance of SinkBuilder
+     */
+    Buildable<K, V> withLazyOutputFormat();
+
+    SequenceFileSink<K, V> build();
   }
 
   /**
+   * Convenience constructor delegating to {@link #SequenceFileSink(Class, Class, String,
+   * Configuration)} with a newly created hadoop configuration.
    *
-   * Constructs a data sink based on hadoop's {@link SequenceFileOutputFormat}.
-   * The specified path is automatically set/overridden in the given hadoop
-   * configuration as well as the key and value types.
+   * @param keyType the type of the key consumed and emitted to the output by the new data sink
+   * @param valueType the type of the value consumed and emitted to the output by the new data sink
+   * @param path the destination where to place the output to
+   * @deprecated will be in next release private, use {@link #of(Class, Class)} instead
+   */
+  public SequenceFileSink(Class<K> keyType, Class<V> valueType, String path) {
+    this(keyType, valueType, path, null);
+  }
+
+  /**
+   * Constructs a data sink based on hadoop's {@link SequenceFileOutputFormat}. The specified path
+   * is automatically set/overridden in the given hadoop configuration as well as the key and value
+   * types.
    *
    * @param keyType the class representing the type of the keys emitted
    * @param valueType the class representing the type of the values emitted
    * @param path the destination where to save the output
    * @param hadoopConfig the hadoop configuration to build on top of
-   *
    * @throws NullPointerException if any of the parameters is {@code null}
-   *
    * @deprecated will be in next release private, use {@link #of(Class, Class)} instead
    */
   @SuppressWarnings("unchecked")
-  public SequenceFileSink(Class<K> keyType, Class<V> valueType,
-                          String path, Configuration hadoopConfig) {
-    this(keyType, valueType, path, hadoopConfig, false);
+  public SequenceFileSink(
+      Class<K> keyType, Class<V> valueType, String path, Configuration hadoopConfig) {
+    this(keyType, valueType, path, wrap(hadoopConfig), false);
   }
 
   /**
@@ -333,18 +212,20 @@ public class SequenceFileSink<K, V> extends HadoopSink<K, V> {
       boolean useLazyOutputFormat) {
     super(
         (Class) SequenceFileOutputFormat.class,
-        wrap(hadoopConfig, path, keyType.getName(), valueType.getName()),
+        setCommonConfValues(hadoopConfig, path, keyType.getName(), valueType.getName()),
         useLazyOutputFormat);
   }
 
-  private static Configuration wrap(Configuration conf,
-                                    String path,
-                                    String keyTypeName,
-                                    String valueTypeName) {
-    final Configuration wrap = new Configuration(conf);
-    wrap.set(FileOutputFormat.OUTDIR, path);
-    wrap.set(JobContext.OUTPUT_KEY_CLASS, keyTypeName);
-    wrap.set(JobContext.OUTPUT_VALUE_CLASS, valueTypeName);
-    return wrap;
+  private static Configuration wrap(Configuration conf) {
+    return conf == null ? new Configuration() : new Configuration(conf);
+  }
+
+  private static Configuration setCommonConfValues(
+      final Configuration conf, String path, String keyTypeName, String valueTypeName) {
+    Objects.requireNonNull(conf);
+    conf.set(FileOutputFormat.OUTDIR, path);
+    conf.set(JobContext.OUTPUT_KEY_CLASS, keyTypeName);
+    conf.set(JobContext.OUTPUT_VALUE_CLASS, valueTypeName);
+    return conf;
   }
 }
