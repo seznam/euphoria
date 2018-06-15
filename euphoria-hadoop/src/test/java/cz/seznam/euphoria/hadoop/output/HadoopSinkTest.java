@@ -180,7 +180,7 @@ public class HadoopSinkTest<I, O, S extends DataSource<I>, T extends DataSink<I>
     @Override
     public SequenceFileSink<Text, LongWritable> buildSink(
         String outputDir, Configuration conf, boolean useLazyOutputFormat) {
-      SequenceFileSink.Buildable<Text, LongWritable> builder =
+      SequenceFileSink.OptionalBuilder<Text, LongWritable> builder =
           SequenceFileSink.of(Text.class, LongWritable.class)
               .outputPath(outputDir)
               .withConfiguration(conf)

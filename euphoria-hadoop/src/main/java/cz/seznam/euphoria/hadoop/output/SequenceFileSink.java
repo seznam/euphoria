@@ -51,11 +51,11 @@ public class SequenceFileSink<K, V> extends HadoopSink<K, V> {
    * @param <V> type of the values emitted
    * @return OutputPathBuilder
    */
-  public static <K, V> OutputPathBuildable<K, V> of(Class<K> keyClass, Class<V> valueClass) {
+  public static <K, V> OutputPathBuilder<K, V> of(Class<K> keyClass, Class<V> valueClass) {
     return new Builder<>(keyClass, valueClass);
   }
 
-  public static class Builder<K, V> implements OutputPathBuildable<K, V>, Buildable<K, V> {
+  public static class Builder<K, V> implements OutputPathBuilder<K, V>, OptionalBuilder<K, V> {
 
     private final Class<K> keyClass;
     private final Class<V> valueClass;
@@ -72,19 +72,19 @@ public class SequenceFileSink<K, V> extends HadoopSink<K, V> {
     }
 
     @Override
-    public Buildable<K, V> outputPath(String outputPath) {
+    public OptionalBuilder<K, V> outputPath(String outputPath) {
       this.outputPath = Objects.requireNonNull(outputPath);
       return this;
     }
 
     @Override
-    public Buildable<K, V> withConfiguration(Configuration configuration) {
+    public OptionalBuilder<K, V> withConfiguration(Configuration configuration) {
       this.configuration = Objects.requireNonNull(configuration);
       return this;
     }
 
     @Override
-    public Buildable<K, V> withCompression(
+    public OptionalBuilder<K, V> withCompression(
         Class<? extends CompressionCodec> compressionClass,
         SequenceFile.CompressionType compressionType) {
       this.compressionClass = Objects.requireNonNull(compressionClass);
@@ -93,7 +93,7 @@ public class SequenceFileSink<K, V> extends HadoopSink<K, V> {
     }
 
     @Override
-    public Buildable<K, V> withLazyOutputFormat() {
+    public OptionalBuilder<K, V> withLazyOutputFormat() {
       this.useLazyOutputFormat = true;
       return this;
     }
@@ -116,7 +116,7 @@ public class SequenceFileSink<K, V> extends HadoopSink<K, V> {
     }
   }
 
-  public interface OutputPathBuildable<K, V> {
+  public interface OutputPathBuilder<K, V> {
 
     /**
      * Mandatory output path.
@@ -124,10 +124,10 @@ public class SequenceFileSink<K, V> extends HadoopSink<K, V> {
      * @param outputPath the destination where to save the output
      * @return Builder with optional setters
      */
-    Buildable<K, V> outputPath(String outputPath);
+    OptionalBuilder<K, V> outputPath(String outputPath);
   }
 
-  public interface Buildable<K, V> {
+  public interface OptionalBuilder<K, V> {
 
     /**
      * Optional setter if not used it will be created new hadoop configuration.
@@ -135,7 +135,7 @@ public class SequenceFileSink<K, V> extends HadoopSink<K, V> {
      * @param configuration the hadoop configuration to build on top of
      * @return Builder
      */
-    Buildable<K, V> withConfiguration(Configuration configuration);
+    OptionalBuilder<K, V> withConfiguration(Configuration configuration);
 
     /**
      * Optional setter for compression
@@ -144,7 +144,7 @@ public class SequenceFileSink<K, V> extends HadoopSink<K, V> {
      * @param compressionType COMPRESS_TYPE value
      * @return Builder
      */
-    Buildable<K, V> withCompression(
+    OptionalBuilder<K, V> withCompression(
         Class<? extends CompressionCodec> compressionClass,
         SequenceFile.CompressionType compressionType);
 
@@ -154,7 +154,7 @@ public class SequenceFileSink<K, V> extends HadoopSink<K, V> {
      *
      * @return this instance of SinkBuilder
      */
-    Buildable<K, V> withLazyOutputFormat();
+    OptionalBuilder<K, V> withLazyOutputFormat();
 
     SequenceFileSink<K, V> build();
   }
