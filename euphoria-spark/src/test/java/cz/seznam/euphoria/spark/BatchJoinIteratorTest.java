@@ -16,8 +16,11 @@
 package cz.seznam.euphoria.spark;
 
 import cz.seznam.euphoria.core.client.util.Either;
+import java.util.Map;
+import org.apache.commons.lang3.mutable.MutableLong;
 import org.apache.spark.api.java.Optional;
 import cz.seznam.euphoria.shadow.com.google.common.collect.Lists;
+import org.junit.Assert;
 import org.junit.Test;
 import scala.Tuple2;
 
@@ -75,6 +78,44 @@ public class BatchJoinIteratorTest {
             entry("key1", "v1", "w3"),
             entry("key1", "v2", "w3")),
         results);
+  }
+
+  @Test
+  public void testStatistics() {
+
+    final Iterator<Tuple2<BatchJoinKey<String>, Either<String, String>>> inner =
+        asList(
+            entry("key1", LEFT, Either.left("v1")),
+            entry("key1", LEFT, Either.left("v2")),
+            entry("key1", RIGHT, Either.right("w1")),
+            entry("key1", RIGHT, Either.right("w2")),
+            entry("key1", RIGHT, Either.right("w3")))
+            .iterator();
+
+    BatchJoinIterator<String, String, String> iteratorUnderTest = new BatchJoinIterator<>(inner);
+    final List<Tuple2<String, Tuple2<Optional<String>, Optional<String>>>> results =
+        Lists.newArrayList(iteratorUnderTest);
+
+    assertEquals(
+        asList(
+            entry("key1", "v1", "w1"),
+            entry("key1", "v2", "w1"),
+            entry("key1", "v1", "w2"),
+            entry("key1", "v2", "w2"),
+            entry("key1", "v1", "w3"),
+            entry("key1", "v2", "w3")),
+        results);
+
+    Map<String, Tuple2<MutableLong, MutableLong>> numOfElementsByKey =
+        iteratorUnderTest.numOfElementsByKey;
+
+    Assert.assertEquals(1, numOfElementsByKey.size());
+
+    Tuple2<MutableLong, MutableLong> countsPerkey1 = numOfElementsByKey.get("key1");
+    Assert.assertNotNull(countsPerkey1);
+
+    Assert.assertEquals(2L, countsPerkey1._1.longValue());
+    Assert.assertEquals(3L, countsPerkey1._2.longValue());
   }
 
   @Test

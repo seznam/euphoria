@@ -15,14 +15,22 @@
  */
 package cz.seznam.euphoria.spark;
 
+import com.google.common.annotations.VisibleForTesting;
 import cz.seznam.euphoria.core.client.util.Either;
-import org.apache.spark.api.java.Optional;
-import scala.Tuple2;
-
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Queue;
+import java.util.stream.Collectors;
+import org.apache.commons.lang3.mutable.MutableLong;
+import org.apache.spark.api.java.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import scala.Tuple2;
 
 /**
  * Given an iterator over a data-set of items sorted as follows
@@ -44,6 +52,8 @@ import java.util.Queue;
  */
 class BatchJoinIterator<K, L, R> implements Iterator<Tuple2<K, Tuple2<Optional<L>, Optional<R>>>> {
 
+  private static final Logger LOG = LoggerFactory.getLogger(BatchJoinIterator.class);
+
   /** Decorated iterator */
   private final Iterator<Tuple2<BatchJoinKey<K>, Either<L, R>>> inner;
 
@@ -51,8 +61,16 @@ class BatchJoinIterator<K, L, R> implements Iterator<Tuple2<K, Tuple2<Optional<L
   private Queue<Tuple2<BatchJoinKey<K>, Either<L, R>>> leftQueue = new LinkedList<>();
 
   /** Queue the user will iterate on */
-  private final Queue<Tuple2<K, Tuple2<Optional<L>, Optional<R>>>> iteratorQueue =
+  private final Queue<Tuple2<K, Tuple2<Optional<L>, Optional<R>>>> outQueue =
       new LinkedList<>();
+
+  /** Container for element counting statistics **/
+  @VisibleForTesting
+  final Map<K, Tuple2<MutableLong, MutableLong>> numOfElementsByKey =  new HashMap<>();
+  /** Number of elements coming from {@link #inner} seen by this iterator so far. */
+  private long numOfEncounteredElements = 0;
+  /** Number of elements emitted by this {@link Iterator}*/
+  private long numOfEmittedElements = 0;
 
   private boolean leftSideEmitted = false;
 
@@ -62,11 +80,12 @@ class BatchJoinIterator<K, L, R> implements Iterator<Tuple2<K, Tuple2<Optional<L
 
   @Override
   public boolean hasNext() {
-    if (!iteratorQueue.isEmpty()) {
+    if (!outQueue.isEmpty()) {
       return true;
     }
     while (inner.hasNext()) {
       final Tuple2<BatchJoinKey<K>, Either<L, R>> tuple = inner.next();
+      addElementToStats(tuple);
       final BatchJoinKey<K> sjk = tuple._1;
       switch (sjk.getSide()) {
         case LEFT:
@@ -90,7 +109,7 @@ class BatchJoinIterator<K, L, R> implements Iterator<Tuple2<K, Tuple2<Optional<L
               leftSideEmitted = true;
             } else {
               // ~ there is no left side for this key
-              iteratorQueue.add(
+              outQueue.add(
                   new Tuple2<>(
                       sjk.getKey(), new Tuple2<>(Optional.empty(), Optional.of(tuple._2.right()))));
               // ~ and there may be not emitted left side
@@ -104,7 +123,7 @@ class BatchJoinIterator<K, L, R> implements Iterator<Tuple2<K, Tuple2<Optional<L
           throw new IllegalArgumentException(
               "Unexpected BatchJoinKey.Side [" + sjk.getSide() + "] for key [" + sjk + "].");
       }
-      if (!iteratorQueue.isEmpty()) {
+      if (!outQueue.isEmpty()) {
         return true;
       }
     }
@@ -113,18 +132,21 @@ class BatchJoinIterator<K, L, R> implements Iterator<Tuple2<K, Tuple2<Optional<L
       emitLeft();
       return true;
     }
+
+    logStats();
     return false;
   }
 
   @Override
   public Tuple2<K, Tuple2<Optional<L>, Optional<R>>> next() {
-    return iteratorQueue.poll();
+    numOfEmittedElements++;
+    return outQueue.poll();
   }
 
   private void emitCartesianProduct(Tuple2<BatchJoinKey<K>, Either<L, R>> right) {
     leftQueue.forEach(
         left ->
-            iteratorQueue.add(
+            outQueue.add(
                 new Tuple2<>(
                     left._1.getKey(),
                     new Tuple2<>(Optional.of(left._2.left()), Optional.of(right._2.right())))));
@@ -133,7 +155,7 @@ class BatchJoinIterator<K, L, R> implements Iterator<Tuple2<K, Tuple2<Optional<L
   private void emitLeft() {
     leftQueue.forEach(
         left ->
-            iteratorQueue.add(
+            outQueue.add(
                 new Tuple2<>(
                     left._1.getKey(),
                     new Tuple2<>(Optional.of(left._2.left()), Optional.empty()))));
@@ -142,5 +164,57 @@ class BatchJoinIterator<K, L, R> implements Iterator<Tuple2<K, Tuple2<Optional<L
 
   private boolean sameKey(Tuple2<BatchJoinKey<K>, ?> a, Tuple2<BatchJoinKey<K>, ?> b) {
     return Objects.equals(a._1.getKey(), b._1.getKey());
+  }
+
+  private void addElementToStats(Tuple2<BatchJoinKey<K>, Either<L, R>> element){
+
+    K key = element._1.getKey();
+
+    Tuple2<MutableLong, MutableLong> leftRightCounts = numOfElementsByKey
+        .computeIfAbsent(key, (k) -> new Tuple2<>(new MutableLong(), new MutableLong()));
+
+    Either<L, R> eitherSide = element._2;
+
+    if(eitherSide.isLeft()){
+      leftRightCounts._1.increment();
+    }else {
+      leftRightCounts._2.increment();
+    }
+
+    numOfEncounteredElements++;
+  }
+
+  private void logStats(){
+
+    if(!LOG.isInfoEnabled()){
+      return;
+    }
+
+    LOG.info("-- {} statistics:", BatchJoinIterator.class.getSimpleName());
+    LOG.info("-- Keys count: {}, input elements count: {}, output (emitted/joined) elements #: {}.",
+        numOfElementsByKey.size(), numOfEncounteredElements, numOfEmittedElements);
+
+    List<Entry<K, Tuple2<MutableLong, MutableLong>>> top10Keys = numOfElementsByKey.entrySet()
+        .stream()
+        .sorted((e1, e2) -> { // sort keys by total number of elements
+          Tuple2<MutableLong, MutableLong> e1val = e1.getValue();
+          Tuple2<MutableLong, MutableLong> e2val = e2.getValue();
+
+          return Long.compare(
+              e1val._1.longValue() + e1val._2.longValue(),
+              e2val._1.longValue() + e2val._2.longValue());
+        })
+        .limit(10)
+        .collect(Collectors.toList());
+
+    LOG.info("-- top {} keys:", top10Keys.size());
+    top10Keys.forEach( entry -> {
+      Tuple2<MutableLong, MutableLong> val = entry.getValue();
+      long l = val._1.longValue();
+      long r = val._2.longValue();
+      LOG.info("---- key: '{}' , input elements count total: {} ({} left + {} right)",
+          entry.getKey(), l+r, l, r);
+    });
+
   }
 }
