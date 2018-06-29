@@ -212,8 +212,9 @@ class BatchJoinIterator<K, L, R> implements Iterator<Tuple2<K, Tuple2<Optional<L
       Tuple2<MutableLong, MutableLong> val = entry.getValue();
       long l = val._1.longValue();
       long r = val._2.longValue();
-      LOG.info("---- key: '{}' , input elements count total: {} ({} left + {} right)",
-          entry.getKey(), l+r, l, r);
+      K k = entry.getKey();
+      LOG.info("---- key: '{}' (hash: {}), input elements count total: {} ({} left + {} right)",
+          k, k.hashCode(), l+r, l, r);
     });
 
   }
