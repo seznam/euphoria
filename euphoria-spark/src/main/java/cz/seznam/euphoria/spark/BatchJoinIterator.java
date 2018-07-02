@@ -17,16 +17,13 @@ package cz.seznam.euphoria.spark;
 
 import com.google.common.annotations.VisibleForTesting;
 import cz.seznam.euphoria.core.client.util.Either;
-import java.util.HashMap;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.Iterator;
 import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.PriorityQueue;
 import java.util.Queue;
-import java.util.stream.Collectors;
-import org.apache.commons.lang3.mutable.MutableLong;
 import org.apache.spark.api.java.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,6 +50,7 @@ import scala.Tuple2;
 class BatchJoinIterator<K, L, R> implements Iterator<Tuple2<K, Tuple2<Optional<L>, Optional<R>>>> {
 
   private static final Logger LOG = LoggerFactory.getLogger(BatchJoinIterator.class);
+  private static final int NUMBER_OF_TOP_KEYS_TO_KEEP = 10;
 
   /** Decorated iterator */
   private final Iterator<Tuple2<BatchJoinKey<K>, Either<L, R>>> inner;
@@ -64,13 +62,18 @@ class BatchJoinIterator<K, L, R> implements Iterator<Tuple2<K, Tuple2<Optional<L
   private final Queue<Tuple2<K, Tuple2<Optional<L>, Optional<R>>>> outQueue =
       new LinkedList<>();
 
-  /** Container for element counting statistics **/
+  /** Manually bounded container for keys with most values encountered yet. */
   @VisibleForTesting
-  final Map<K, Tuple2<MutableLong, MutableLong>> numOfElementsByKey =  new HashMap<>();
+  final PriorityQueue<StatsItem<K>> topKeys = new PriorityQueue<>();
   /** Number of elements coming from {@link #inner} seen by this iterator so far. */
   private long numOfEncounteredElements = 0;
   /** Number of elements emitted by this {@link Iterator}*/
   private long numOfEmittedElements = 0;
+
+  /** Number of distinct keys coming from {@link #inner}.*/
+  private long numberOfKeys = 0;
+
+  private StatsItem<K> currentKeyStats = null;
 
   private boolean leftSideEmitted = false;
 
@@ -133,6 +136,9 @@ class BatchJoinIterator<K, L, R> implements Iterator<Tuple2<K, Tuple2<Optional<L
       return true;
     }
 
+    if (currentKeyStats != null){
+      keepOrScrapKeyStats(currentKeyStats);
+    }
     logStats();
     return false;
   }
@@ -166,56 +172,91 @@ class BatchJoinIterator<K, L, R> implements Iterator<Tuple2<K, Tuple2<Optional<L
     return Objects.equals(a._1.getKey(), b._1.getKey());
   }
 
-  private void addElementToStats(Tuple2<BatchJoinKey<K>, Either<L, R>> element){
+  private void addElementToStats(Tuple2<BatchJoinKey<K>, Either<L, R>> element) {
 
     K key = element._1.getKey();
+    if (currentKeyStats == null) {
+      currentKeyStats = new StatsItem<>(key);
+      numberOfKeys++;
+    }
 
-    Tuple2<MutableLong, MutableLong> leftRightCounts = numOfElementsByKey
-        .computeIfAbsent(key, (k) -> new Tuple2<>(new MutableLong(), new MutableLong()));
+    if (!key.equals(currentKeyStats.key)) { // key has changed, commit statistics
+      keepOrScrapKeyStats(currentKeyStats);
+      currentKeyStats = new StatsItem<>(key);
+      numberOfKeys++;
+    }
 
     Either<L, R> eitherSide = element._2;
 
-    if(eitherSide.isLeft()){
-      leftRightCounts._1.increment();
-    }else {
-      leftRightCounts._2.increment();
+    if (eitherSide.isLeft()) {
+      currentKeyStats.leftSideElements++;
+    } else {
+      currentKeyStats.rightSideElements++;
     }
 
     numOfEncounteredElements++;
   }
 
-  private void logStats(){
+  private void keepOrScrapKeyStats(StatsItem<K> finishedStats){
+    if (topKeys.size() < NUMBER_OF_TOP_KEYS_TO_KEEP){
+      topKeys.add(finishedStats);
+      return;
+    }
 
-    if(!LOG.isInfoEnabled()){
+    StatsItem<K> smallestKey = topKeys.peek();
+    if(finishedStats.elementsCount()> smallestKey.elementsCount()){
+      topKeys.poll();
+      topKeys.add(finishedStats);
+    }
+
+  }
+
+  private void logStats() {
+
+    if (!LOG.isInfoEnabled()) {
       return;
     }
 
     LOG.info("-- {} statistics:", BatchJoinIterator.class.getSimpleName());
     LOG.info("-- Keys count: {}, input elements count: {}, output (emitted/joined) elements #: {}.",
-        numOfElementsByKey.size(), numOfEncounteredElements, numOfEmittedElements);
+        numberOfKeys, numOfEncounteredElements, numOfEmittedElements);
 
-    List<Entry<K, Tuple2<MutableLong, MutableLong>>> top10Keys = numOfElementsByKey.entrySet()
-        .stream()
-        .sorted((e1, e2) -> { // sort keys by total number of elements
-          Tuple2<MutableLong, MutableLong> e1val = e1.getValue();
-          Tuple2<MutableLong, MutableLong> e2val = e2.getValue();
+    PriorityQueue<StatsItem<K>> keysToLog = new PriorityQueue<>(topKeys);
+    Deque<StatsItem<K>> biggestKeyFirst = new ArrayDeque<>(keysToLog.size());
+    StatsItem<K> topItem;
+    while ((topItem = keysToLog.poll()) != null) {
+      biggestKeyFirst.addFirst(topItem);
+    }
 
-          return Long.compare(
-              e1val._1.longValue() + e1val._2.longValue(),
-              e2val._1.longValue() + e2val._2.longValue());
-        })
-        .limit(10)
-        .collect(Collectors.toList());
-
-    LOG.info("-- top {} keys:", top10Keys.size());
-    top10Keys.forEach( entry -> {
-      Tuple2<MutableLong, MutableLong> val = entry.getValue();
-      long l = val._1.longValue();
-      long r = val._2.longValue();
-      K k = entry.getKey();
-      LOG.info("---- key: '{}' (hash: {}), input elements count total: {} ({} left + {} right)",
-          k, k.hashCode(), l+r, l, r);
+    LOG.info("-- top {} keys:", biggestKeyFirst.size());
+    biggestKeyFirst.forEach(item -> {
+      long l = item.leftSideElements;
+      long r = item.rightSideElements;
+      K k = item.key;
+      LOG.info("---- key: '{}' (hash: {}), input elements count: {} ({} left + {} right)",
+          k, k.hashCode(), l + r, l, r);
     });
+
+  }
+
+  @VisibleForTesting
+  static class StatsItem<K> implements Comparable<StatsItem<K>>{
+    final K key;
+    long leftSideElements = 0;
+    long rightSideElements = 0;
+
+    public StatsItem(K key) {
+      this.key = key;
+    }
+
+    @Override
+    public int compareTo(StatsItem<K> o) {
+      return Long.compare(elementsCount(), o.elementsCount());
+    }
+
+    long elementsCount(){
+      return leftSideElements + rightSideElements;
+    }
 
   }
 }

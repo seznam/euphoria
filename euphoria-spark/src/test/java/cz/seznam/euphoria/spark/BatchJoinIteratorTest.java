@@ -15,22 +15,25 @@
  */
 package cz.seznam.euphoria.spark;
 
+import static cz.seznam.euphoria.spark.BatchJoinKey.Side.LEFT;
+import static cz.seznam.euphoria.spark.BatchJoinKey.Side.RIGHT;
+import static java.util.Arrays.asList;
+import static org.junit.Assert.assertEquals;
+
 import cz.seznam.euphoria.core.client.util.Either;
-import java.util.Map;
-import org.apache.commons.lang3.mutable.MutableLong;
-import org.apache.spark.api.java.Optional;
 import cz.seznam.euphoria.shadow.com.google.common.collect.Lists;
+import cz.seznam.euphoria.spark.BatchJoinIterator.StatsItem;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.Iterator;
+import java.util.List;
+import java.util.PriorityQueue;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import org.apache.spark.api.java.Optional;
 import org.junit.Assert;
 import org.junit.Test;
 import scala.Tuple2;
-
-import java.util.Iterator;
-import java.util.List;
-
-import static java.util.Arrays.asList;
-import static org.junit.Assert.assertEquals;
-import static cz.seznam.euphoria.spark.BatchJoinKey.Side.LEFT;
-import static cz.seznam.euphoria.spark.BatchJoinKey.Side.RIGHT;
 
 public class BatchJoinIteratorTest {
 
@@ -106,16 +109,67 @@ public class BatchJoinIteratorTest {
             entry("key1", "v2", "w3")),
         results);
 
-    Map<String, Tuple2<MutableLong, MutableLong>> numOfElementsByKey =
-        iteratorUnderTest.numOfElementsByKey;
+    PriorityQueue<StatsItem<String>> topKeys = iteratorUnderTest.topKeys;
 
-    Assert.assertEquals(1, numOfElementsByKey.size());
+    Assert.assertEquals(1, topKeys.size());
 
-    Tuple2<MutableLong, MutableLong> countsPerkey1 = numOfElementsByKey.get("key1");
-    Assert.assertNotNull(countsPerkey1);
+    StatsItem<String> item = topKeys.peek();
+    Assert.assertNotNull(item);
 
-    Assert.assertEquals(2L, countsPerkey1._1.longValue());
-    Assert.assertEquals(3L, countsPerkey1._2.longValue());
+    Assert.assertEquals(2L, item.leftSideElements);
+    Assert.assertEquals(3L, item.rightSideElements);
+  }
+
+  @Test
+  public void testStatisticsManyKeys() { //TODO add more than 10 keys test
+
+    final List<Tuple2<BatchJoinKey<String>, Either<String, String>>> inputs = IntStream
+        .range(1, 25)
+        .mapToObj(i -> entry("key" + i, LEFT, Either.left("vl")))
+        .collect(Collectors.toList());
+
+    inputs.add(entry("key24", RIGHT, Either.right("vr1")));
+    inputs.add(entry("key24", RIGHT, Either.right("vr2")));
+
+    inputs.add(entry("key25", LEFT, Either.left("vl")));
+    inputs.add(entry("key25", RIGHT, Either.right("vr1")));
+    inputs.add(entry("key25", RIGHT, Either.right("vr2")));
+    inputs.add(entry("key25", RIGHT, Either.right("vr3")));
+
+    System.out.println(inputs);
+
+    BatchJoinIterator<String, String, String> iteratorUnderTest =
+        new BatchJoinIterator<>(inputs.iterator());
+    final List<Tuple2<String, Tuple2<Optional<String>, Optional<String>>>> results =
+        Lists.newArrayList(iteratorUnderTest);
+
+
+    PriorityQueue<StatsItem<String>> topKeys = iteratorUnderTest.topKeys;
+
+    Assert.assertEquals(10, topKeys.size());
+    Deque<StatsItem<String>> biggestKeyFirst = new ArrayDeque<>(topKeys.size());
+    StatsItem<String> topItem;
+    while((topItem = topKeys.poll()) != null){
+      biggestKeyFirst.addFirst(topItem);
+    }
+
+    StatsItem<String> biggest = biggestKeyFirst.poll();
+    Assert.assertNotNull(biggest);
+    Assert.assertEquals("key25", biggest.key);
+    Assert.assertEquals(1, biggest.leftSideElements);
+    Assert.assertEquals(3, biggest.rightSideElements);
+
+    StatsItem<String> secondBiggest = biggestKeyFirst.poll();
+    Assert.assertNotNull(biggest);
+    Assert.assertEquals("key24", secondBiggest.key);
+    Assert.assertEquals(1, secondBiggest.leftSideElements);
+    Assert.assertEquals(2, secondBiggest.rightSideElements);
+
+    biggestKeyFirst.forEach( (item) -> {
+      Assert.assertEquals(1, item.leftSideElements);
+      Assert.assertEquals(0, item.rightSideElements);
+    });
+
   }
 
   @Test
