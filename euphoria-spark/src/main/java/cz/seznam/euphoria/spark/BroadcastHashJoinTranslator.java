@@ -26,8 +26,11 @@ import cz.seznam.euphoria.core.client.operator.Join;
 import cz.seznam.euphoria.core.client.operator.hint.SizeHint;
 import cz.seznam.euphoria.core.client.util.Either;
 import cz.seznam.euphoria.core.client.util.Pair;
+import java.util.IdentityHashMap;
+import java.util.Objects;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.Optional;
 import org.apache.spark.api.java.function.PairFlatMapFunction;
 import org.apache.spark.broadcast.Broadcast;
@@ -61,9 +64,41 @@ public class BroadcastHashJoinTranslator implements SparkOperatorTranslator<Join
 
   private static final Logger LOG = LoggerFactory.getLogger(BroadcastHashJoinTranslator.class);
 
+  private static class BroadcastKey {
+
+    private final JavaRDD<SparkElement> rdd;
+    private final KeyExtractor keyExtractor;
+
+    BroadcastKey(JavaRDD<SparkElement> rdd, KeyExtractor keyExtractor) {
+      this.rdd = rdd;
+      this.keyExtractor = keyExtractor;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) {
+        return true;
+      }
+      if (o == null || getClass() != o.getClass()) {
+        return false;
+      }
+      final BroadcastKey that = (BroadcastKey) o;
+      return Objects.equals(rdd, that.rdd) &&
+          Objects.equals(keyExtractor, that.keyExtractor);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(rdd, keyExtractor);
+    }
+  }
+
   static boolean wantTranslate(Join o) {
     return wantTranslateBroadcastHashJoin(o);
   }
+
+  private final Map<BroadcastKey, Broadcast<Map<KeyedWindow, List<SparkElement>>>> broadcasts =
+      new HashMap<>();
 
   @Override
   @SuppressWarnings("unchecked")
@@ -87,70 +122,88 @@ public class BroadcastHashJoinTranslator implements SparkOperatorTranslator<Join
         ? AttachedWindowing.INSTANCE
         : operator.getWindowing();
 
-    final JavaPairRDD<KeyedWindow, SparkElement> leftPair =
-        left.flatMapToPair(new KeyExtractor(operator.getLeftKeyExtractor(), windowing, true))
-            .setName(operator.getName() + "::extract-keys");
-    final JavaPairRDD<KeyedWindow, SparkElement> rightPair =
-        right
-            .flatMapToPair(new KeyExtractor(operator.getRightKeyExtractor(), windowing, false))
-            .setName(operator.getName() + "::extract-values");
+    final KeyExtractor leftKeyExtractor =
+        new KeyExtractor(operator.getLeftKeyExtractor(), windowing, true);
+
+    final KeyExtractor rightKeyExtractor =
+        new KeyExtractor(operator.getRightKeyExtractor(), windowing, false);
 
     final JavaPairRDD<KeyedWindow, Tuple2<Optional<SparkElement>, Optional<SparkElement>>> joined;
 
     switch (operator.getType()) {
       case LEFT: {
 
-        // ~ this will submit a new job, in order to collect results
-        final Broadcast<Map<KeyedWindow, List<SparkElement>>> broadcast = context
-            .getExecutionEnvironment()
-            .broadcast(toBroadcast(rightPair.collect()));
+        // ~ this may submit a new job, in order to collect results
+        final Broadcast<Map<KeyedWindow, List<SparkElement>>> broadcast =
+            broadcasts.computeIfAbsent(
+                new BroadcastKey(right, rightKeyExtractor),
+                key ->
+                    context.getExecutionEnvironment()
+                        .broadcast(
+                            toBroadcast(
+                                right
+                                    .flatMapToPair(rightKeyExtractor)
+                                    .setName(operator.getName() + "::extract-right")
+                                    .collect())));
 
-          joined =
-              leftPair
-                  .flatMapToPair(
-                      t -> {
-                        if (broadcast.getValue().containsKey(t._1)) {
-                          return Iterables.transform(
-                                  broadcast.getValue().get(t._1),
-                                  el -> new Tuple2<>(t._1, new Tuple2<>(opt(t._2), opt(el))))
-                              .iterator();
-                        } else {
-                          return Collections.singletonList(
-                                  new Tuple2<>(
-                                      t._1,
-                                      new Tuple2<>(opt(t._2), Optional.<SparkElement>empty())))
-                              .iterator();
-                        }
-                      })
-                  .setName(operator.getName() + "::map-side-left-join");
+        joined =
+            left
+                .flatMapToPair(leftKeyExtractor)
+                .setName(operator.getName() + "::extract-left")
+                .flatMapToPair(
+                    t -> {
+                      if (broadcast.getValue().containsKey(t._1)) {
+                        return Iterables.transform(
+                            broadcast.getValue().get(t._1),
+                            el -> new Tuple2<>(t._1, new Tuple2<>(opt(t._2), opt(el))))
+                            .iterator();
+                      } else {
+                        return Collections.singletonList(
+                            new Tuple2<>(
+                                t._1,
+                                new Tuple2<>(opt(t._2), Optional.<SparkElement>empty())))
+                            .iterator();
+                      }
+                    })
+                .setName(operator.getName() + "::map-side-left-join");
 
         break;
       }
       case RIGHT: {
 
-        // ~ this will submit a new job, in order to collect results
-        final Broadcast<Map<KeyedWindow, List<SparkElement>>> broadcast = context
-            .getExecutionEnvironment()
-            .broadcast(toBroadcast(leftPair.collect()));
+        // ~ this may submit a new job, in order to collect results
+        final Broadcast<Map<KeyedWindow, List<SparkElement>>> broadcast =
+            broadcasts.computeIfAbsent(
+                new BroadcastKey(left, leftKeyExtractor),
+                key ->
+                    context.getExecutionEnvironment()
+                        .broadcast(
+                            toBroadcast(
+                                left
+                                    .flatMapToPair(leftKeyExtractor)
+                                    .setName(operator.getName() + "::extract-left")
+                                    .collect())));
 
-          joined =
-              rightPair
-                  .flatMapToPair(
-                      t -> {
-                        if (broadcast.getValue().containsKey(t._1)) {
-                          return Iterables.transform(
-                                  broadcast.getValue().get(t._1),
-                                  el -> new Tuple2<>(t._1, new Tuple2<>(opt(el), opt(t._2))))
-                              .iterator();
-                        } else {
-                          return Collections.singletonList(
-                                  new Tuple2<>(
-                                      t._1,
-                                      new Tuple2<>(Optional.<SparkElement>empty(), opt(t._2))))
-                              .iterator();
-                        }
-                      })
-                  .setName(operator.getName() + "::map-side-right-join");
+        joined =
+            right
+                .flatMapToPair(rightKeyExtractor)
+                .setName(operator.getName() + "::extract-right")
+                .flatMapToPair(
+                    t -> {
+                      if (broadcast.getValue().containsKey(t._1)) {
+                        return Iterables.transform(
+                            broadcast.getValue().get(t._1),
+                            el -> new Tuple2<>(t._1, new Tuple2<>(opt(el), opt(t._2))))
+                            .iterator();
+                      } else {
+                        return Collections.singletonList(
+                            new Tuple2<>(
+                                t._1,
+                                new Tuple2<>(Optional.<SparkElement>empty(), opt(t._2))))
+                            .iterator();
+                      }
+                    })
+                .setName(operator.getName() + "::map-side-right-join");
 
         break;
       }
@@ -229,6 +282,25 @@ public class BroadcastHashJoinTranslator implements SparkOperatorTranslator<Join
       return Iterators.transform(windows.iterator(), w -> new Tuple2<>(
           new KeyedWindow<>(w, se.getTimestamp(), keyExtractor.apply(se.getElement())),
           new SparkElement(w, se.getTimestamp(), se.getElement())));
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) {
+        return true;
+      }
+      if (o == null || getClass() != o.getClass()) {
+        return false;
+      }
+      final KeyExtractor that = (KeyExtractor) o;
+      return left == that.left &&
+          Objects.equals(keyExtractor, that.keyExtractor) &&
+          Objects.equals(windowing, that.windowing);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(keyExtractor, windowing, left);
     }
   }
 }
