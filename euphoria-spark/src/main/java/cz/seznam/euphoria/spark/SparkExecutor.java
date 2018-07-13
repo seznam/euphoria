@@ -21,6 +21,7 @@ import cz.seznam.euphoria.core.client.dataset.Dataset;
 import cz.seznam.euphoria.core.client.flow.Flow;
 import cz.seznam.euphoria.core.client.io.DataSink;
 import cz.seznam.euphoria.core.executor.Executor;
+import cz.seznam.euphoria.core.util.Settings;
 import cz.seznam.euphoria.shadow.com.google.common.base.Preconditions;
 import cz.seznam.euphoria.spark.accumulators.SparkAccumulatorFactory;
 import org.apache.commons.lang3.SerializationUtils;
@@ -76,6 +77,7 @@ public class SparkExecutor implements Executor {
     private boolean kryoRequiredRegistrationDisabled = false;
     private Class<? extends SparkKryoRegistrator> registrator = null;
     private StorageLevel storageLevel = StorageLevel.MEMORY_AND_DISK_SER();
+    private long desiredSplitSize = -1;
 
     private Builder(String appName, SparkConf conf) {
       this.appName = appName;
@@ -147,6 +149,17 @@ public class SparkExecutor implements Executor {
     }
 
     /**
+     * Desired size of input split.
+     *
+     * @param desiredSplitSize size in bytes
+     * @return builder
+     */
+    public Builder desiredSplitSize(long desiredSplitSize) {
+      this.desiredSplitSize = desiredSplitSize;
+      return this;
+    }
+
+    /**
      * Force kryo to accept non registered classes. Not recommended.
      *
      * @return builder
@@ -169,7 +182,7 @@ public class SparkExecutor implements Executor {
         conf.set("spark.kryo.registrationRequired", "true");
         conf.set("spark.kryo.registrator", registrator.getName());
       }
-      return new SparkExecutor(conf, storageLevel);
+      return new SparkExecutor(conf, storageLevel, desiredSplitSize);
     }
   }
 
@@ -180,14 +193,17 @@ public class SparkExecutor implements Executor {
    */
   private final StorageLevel storageLevel;
 
+  private final long desiredSplitSize;
+
   private final ExecutorService submitExecutor = Executors.newCachedThreadPool();
 
   private SparkAccumulatorFactory accumulatorFactory =
       new SparkAccumulatorFactory.Adapter(VoidAccumulatorProvider.getFactory());
 
-  private SparkExecutor(SparkConf conf, StorageLevel storageLevel) {
+  private SparkExecutor(SparkConf conf, StorageLevel storageLevel, long desiredSplitSize) {
     this.sparkContext = new JavaSparkContext(conf);
     this.storageLevel = storageLevel;
+    this.desiredSplitSize = desiredSplitSize;
   }
 
   @Override
@@ -234,9 +250,15 @@ public class SparkExecutor implements Executor {
 
     List<DataSink<?>> sinks = Collections.emptyList();
     try {
+      final Settings settings = flow.getSettings();
+      if (desiredSplitSize != -1) {
+        settings.setLong(InputTranslator.DESIRED_SPLIT_SIZE, desiredSplitSize);
+      }
+
       // FIXME blocking operation in Spark
-      SparkFlowTranslator translator =
-          new SparkFlowTranslator(sparkContext, flow.getSettings(), clonedFactory);
+      final SparkFlowTranslator translator =
+          new SparkFlowTranslator(sparkContext, settings, clonedFactory);
+
       sinks = translator.translateInto(flow, storageLevel);
     } catch (Exception e) {
       // FIXME in case of exception list of sinks will be empty

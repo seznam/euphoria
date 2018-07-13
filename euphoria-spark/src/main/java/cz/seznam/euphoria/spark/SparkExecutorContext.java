@@ -15,7 +15,6 @@
  */
 package cz.seznam.euphoria.spark;
 
-import cz.seznam.euphoria.core.client.dataset.windowing.Window;
 import cz.seznam.euphoria.core.executor.graph.DAG;
 import cz.seznam.euphoria.core.executor.graph.Node;
 import cz.seznam.euphoria.core.client.operator.Operator;

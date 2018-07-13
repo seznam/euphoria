@@ -137,7 +137,7 @@ public class DataSourceInputFormatTest {
 
     Configuration conf = new Configuration();
     TaskAttemptContext tac = mock(TaskAttemptContext.class);
-    DataSourceInputFormat.configure(conf, source);
+    DataSourceInputFormat.configure(conf, source, 1);
 
     when(tac.getConfiguration()).thenReturn(conf);
 

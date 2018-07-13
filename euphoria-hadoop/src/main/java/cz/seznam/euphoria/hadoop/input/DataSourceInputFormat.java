@@ -45,7 +45,6 @@ public class DataSourceInputFormat<V> extends InputFormat<NullWritable, V> {
 
   private static final String DATA_SOURCE = "cz.seznam.euphoria.hadoop.data-source-serialized";
   private static final String DESIRED_SPLIT_SIZE = "cz.seznam.euphoria.hadoop.desired-split-size";
-  private static final long DEFAULT_DESIRED_SPLIT_SIZE = 256 * 1024 * 1024;
 
   /**
    * Sets/Serializes given {@link DataSource} into Hadoop configuration. Note that
@@ -58,9 +57,10 @@ public class DataSourceInputFormat<V> extends InputFormat<NullWritable, V> {
    *
    * @throws IOException if serializing the given data source fails for some reason
    */
-  public static Configuration configure(Configuration conf, DataSource<?> source)
+  public static Configuration configure(Configuration conf, DataSource<?> source, long desiredSplitSize)
       throws IOException {
     conf.set(DATA_SOURCE, toBase64(source));
+    conf.set(DESIRED_SPLIT_SIZE, String.valueOf(desiredSplitSize));
     return conf;
   }
 
@@ -190,7 +190,7 @@ public class DataSourceInputFormat<V> extends InputFormat<NullWritable, V> {
   private void initialize(Configuration conf) throws IOException {
     if (source == null) {
       final String serialized = conf.get(DATA_SOURCE);
-      desiredSplitSize = conf.getLong(DESIRED_SPLIT_SIZE, DEFAULT_DESIRED_SPLIT_SIZE);
+      desiredSplitSize = Long.parseLong(conf.get(DESIRED_SPLIT_SIZE));
       try {
         source = fromBase64(serialized);
       } catch (ClassNotFoundException ex) {

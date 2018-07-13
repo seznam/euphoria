@@ -26,15 +26,21 @@ import org.apache.spark.api.java.JavaRDD;
 
 class InputTranslator implements SparkOperatorTranslator<FlowUnfolder.InputOperator> {
 
+  static final String DESIRED_SPLIT_SIZE = "desired.split.size.bytes";
+
+  private static final int DEFAULT_DESIRED_SLIT_SIZE = 128 * 1024 * 1024;
+
   @Override
-  public JavaRDD<?> translate(FlowUnfolder.InputOperator operator,
-                              SparkExecutorContext context) {
+  public JavaRDD<?> translate(FlowUnfolder.InputOperator operator, SparkExecutorContext context) {
 
     // get original datasource from operator
     DataSource<?> ds = operator.output().getSource();
 
     try {
-      Configuration conf = DataSourceInputFormat.configure(new Configuration(), ds);
+      final long desiredSplitSize = context.getSettings()
+          .getLong(DESIRED_SPLIT_SIZE, DEFAULT_DESIRED_SLIT_SIZE);
+      final Configuration conf = DataSourceInputFormat.configure(
+          new Configuration(), ds, desiredSplitSize);
 
       @SuppressWarnings("unchecked")
       JavaPairRDD<Object, Object> pairs =
