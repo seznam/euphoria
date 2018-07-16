@@ -309,7 +309,7 @@ public class BatchJoinIteratorTest {
 
   private Tuple2<BatchJoinKey<String>, Either<String, String>> entry(
       String key, BatchJoinKey.Side side, Either<String, String> value) {
-    return new Tuple2<>(new BatchJoinKey<>(key, side, 0), value);
+    return new Tuple2<>(new BatchJoinKey<>(key, side), value);
   }
 
   private Tuple2<String, Tuple2<Optional<String>, Optional<String>>> entry(
