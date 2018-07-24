@@ -60,7 +60,7 @@ public class DataSourceInputFormat<V> extends InputFormat<NullWritable, V> {
   public static Configuration configure(Configuration conf, DataSource<?> source, long desiredSplitSize)
       throws IOException {
     conf.set(DATA_SOURCE, toBase64(source));
-    conf.set(DESIRED_SPLIT_SIZE, String.valueOf(desiredSplitSize));
+    conf.setLong(DESIRED_SPLIT_SIZE, desiredSplitSize);
     return conf;
   }
 

@@ -28,7 +28,7 @@ class InputTranslator implements SparkOperatorTranslator<FlowUnfolder.InputOpera
 
   static final String DESIRED_SPLIT_SIZE = "desired.split.size.bytes";
 
-  private static final int DEFAULT_DESIRED_SLIT_SIZE = 128 * 1024 * 1024;
+  private static final int DEFAULT_DESIRED_SPLIT_SIZE = 128 * 1024 * 1024;
 
   @Override
   public JavaRDD<?> translate(FlowUnfolder.InputOperator operator, SparkExecutorContext context) {
@@ -38,7 +38,7 @@ class InputTranslator implements SparkOperatorTranslator<FlowUnfolder.InputOpera
 
     try {
       final long desiredSplitSize = context.getSettings()
-          .getLong(DESIRED_SPLIT_SIZE, DEFAULT_DESIRED_SLIT_SIZE);
+          .getLong(DESIRED_SPLIT_SIZE, DEFAULT_DESIRED_SPLIT_SIZE);
       final Configuration conf = DataSourceInputFormat.configure(
           new Configuration(), ds, desiredSplitSize);
 
