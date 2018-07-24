@@ -70,4 +70,13 @@ class BatchJoinKey<KEY> implements Comparable<BatchJoinKey<KEY>> {
     return 1;
 
   }
+
+  @Override
+  public String toString() {
+    return "BatchJoinKey{" +
+        "key=" + key +
+        ", side=" + side +
+        ", partitionIdx=" + partitionIdx +
+        '}';
+  }
 }

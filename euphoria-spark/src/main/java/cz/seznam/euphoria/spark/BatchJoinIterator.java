@@ -15,14 +15,19 @@
  */
 package cz.seznam.euphoria.spark;
 
+import com.google.common.annotations.VisibleForTesting;
 import cz.seznam.euphoria.core.client.util.Either;
-import org.apache.spark.api.java.Optional;
-import scala.Tuple2;
-
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.Objects;
+import java.util.PriorityQueue;
 import java.util.Queue;
+import org.apache.spark.api.java.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import scala.Tuple2;
 
 /**
  * Given an iterator over a data-set of items sorted as follows
@@ -44,6 +49,9 @@ import java.util.Queue;
  */
 class BatchJoinIterator<K, L, R> implements Iterator<Tuple2<K, Tuple2<Optional<L>, Optional<R>>>> {
 
+  private static final Logger LOG = LoggerFactory.getLogger(BatchJoinIterator.class);
+  private static final int NUMBER_OF_TOP_KEYS_TO_KEEP = 10;
+
   /** Decorated iterator */
   private final Iterator<Tuple2<BatchJoinKey<K>, Either<L, R>>> inner;
 
@@ -51,8 +59,21 @@ class BatchJoinIterator<K, L, R> implements Iterator<Tuple2<K, Tuple2<Optional<L
   private Queue<Tuple2<BatchJoinKey<K>, Either<L, R>>> leftQueue = new LinkedList<>();
 
   /** Queue the user will iterate on */
-  private final Queue<Tuple2<K, Tuple2<Optional<L>, Optional<R>>>> iteratorQueue =
+  private final Queue<Tuple2<K, Tuple2<Optional<L>, Optional<R>>>> outQueue =
       new LinkedList<>();
+
+  /** Manually bounded container for keys with most values encountered yet. */
+  @VisibleForTesting
+  final PriorityQueue<StatsItem<K>> topKeys = new PriorityQueue<>();
+  /** Number of elements coming from {@link #inner} seen by this iterator so far. */
+  private long numOfEncounteredElements = 0;
+  /** Number of elements emitted by this {@link Iterator}*/
+  private long numOfEmittedElements = 0;
+
+  /** Number of distinct keys coming from {@link #inner}.*/
+  private long numberOfKeys = 0;
+
+  private StatsItem<K> currentKeyStats = null;
 
   private boolean leftSideEmitted = false;
 
@@ -62,11 +83,12 @@ class BatchJoinIterator<K, L, R> implements Iterator<Tuple2<K, Tuple2<Optional<L
 
   @Override
   public boolean hasNext() {
-    if (!iteratorQueue.isEmpty()) {
+    if (!outQueue.isEmpty()) {
       return true;
     }
     while (inner.hasNext()) {
       final Tuple2<BatchJoinKey<K>, Either<L, R>> tuple = inner.next();
+      addElementToStats(tuple);
       final BatchJoinKey<K> sjk = tuple._1;
       switch (sjk.getSide()) {
         case LEFT:
@@ -90,7 +112,7 @@ class BatchJoinIterator<K, L, R> implements Iterator<Tuple2<K, Tuple2<Optional<L
               leftSideEmitted = true;
             } else {
               // ~ there is no left side for this key
-              iteratorQueue.add(
+              outQueue.add(
                   new Tuple2<>(
                       sjk.getKey(), new Tuple2<>(Optional.empty(), Optional.of(tuple._2.right()))));
               // ~ and there may be not emitted left side
@@ -104,7 +126,7 @@ class BatchJoinIterator<K, L, R> implements Iterator<Tuple2<K, Tuple2<Optional<L
           throw new IllegalArgumentException(
               "Unexpected BatchJoinKey.Side [" + sjk.getSide() + "] for key [" + sjk + "].");
       }
-      if (!iteratorQueue.isEmpty()) {
+      if (!outQueue.isEmpty()) {
         return true;
       }
     }
@@ -113,18 +135,24 @@ class BatchJoinIterator<K, L, R> implements Iterator<Tuple2<K, Tuple2<Optional<L
       emitLeft();
       return true;
     }
+
+    if (currentKeyStats != null){
+      keepOrScrapKeyStats(currentKeyStats);
+    }
+    logStats();
     return false;
   }
 
   @Override
   public Tuple2<K, Tuple2<Optional<L>, Optional<R>>> next() {
-    return iteratorQueue.poll();
+    numOfEmittedElements++;
+    return outQueue.poll();
   }
 
   private void emitCartesianProduct(Tuple2<BatchJoinKey<K>, Either<L, R>> right) {
     leftQueue.forEach(
         left ->
-            iteratorQueue.add(
+            outQueue.add(
                 new Tuple2<>(
                     left._1.getKey(),
                     new Tuple2<>(Optional.of(left._2.left()), Optional.of(right._2.right())))));
@@ -133,7 +161,7 @@ class BatchJoinIterator<K, L, R> implements Iterator<Tuple2<K, Tuple2<Optional<L
   private void emitLeft() {
     leftQueue.forEach(
         left ->
-            iteratorQueue.add(
+            outQueue.add(
                 new Tuple2<>(
                     left._1.getKey(),
                     new Tuple2<>(Optional.of(left._2.left()), Optional.empty()))));
@@ -142,5 +170,93 @@ class BatchJoinIterator<K, L, R> implements Iterator<Tuple2<K, Tuple2<Optional<L
 
   private boolean sameKey(Tuple2<BatchJoinKey<K>, ?> a, Tuple2<BatchJoinKey<K>, ?> b) {
     return Objects.equals(a._1.getKey(), b._1.getKey());
+  }
+
+  private void addElementToStats(Tuple2<BatchJoinKey<K>, Either<L, R>> element) {
+
+    K key = element._1.getKey();
+    if (currentKeyStats == null) {
+      currentKeyStats = new StatsItem<>(key);
+      numberOfKeys++;
+    }
+
+    if (!key.equals(currentKeyStats.key)) { // key has changed, commit statistics
+      keepOrScrapKeyStats(currentKeyStats);
+      currentKeyStats = new StatsItem<>(key);
+      numberOfKeys++;
+    }
+
+    Either<L, R> eitherSide = element._2;
+
+    if (eitherSide.isLeft()) {
+      currentKeyStats.leftSideElements++;
+    } else {
+      currentKeyStats.rightSideElements++;
+    }
+
+    numOfEncounteredElements++;
+  }
+
+  private void keepOrScrapKeyStats(StatsItem<K> finishedStats){
+    if (topKeys.size() < NUMBER_OF_TOP_KEYS_TO_KEEP){
+      topKeys.add(finishedStats);
+      return;
+    }
+
+    StatsItem<K> smallestKey = topKeys.peek();
+    if(finishedStats.elementsCount()> smallestKey.elementsCount()){
+      topKeys.poll();
+      topKeys.add(finishedStats);
+    }
+
+  }
+
+  private void logStats() {
+
+    if (!LOG.isInfoEnabled()) {
+      return;
+    }
+
+    LOG.info("-- {} statistics:", BatchJoinIterator.class.getSimpleName());
+    LOG.info("-- Keys count: {}, input elements count: {}, output (emitted/joined) elements #: {}.",
+        numberOfKeys, numOfEncounteredElements, numOfEmittedElements);
+
+    PriorityQueue<StatsItem<K>> keysToLog = new PriorityQueue<>(topKeys);
+    Deque<StatsItem<K>> biggestKeyFirst = new ArrayDeque<>(keysToLog.size());
+    StatsItem<K> topItem;
+    while ((topItem = keysToLog.poll()) != null) {
+      biggestKeyFirst.addFirst(topItem);
+    }
+
+    LOG.info("-- top {} keys:", biggestKeyFirst.size());
+    biggestKeyFirst.forEach(item -> {
+      long l = item.leftSideElements;
+      long r = item.rightSideElements;
+      K k = item.key;
+      LOG.info("---- key: '{}' (hash: {}), input elements count: {} ({} left + {} right)",
+          k, k.hashCode(), l + r, l, r);
+    });
+
+  }
+
+  @VisibleForTesting
+  static class StatsItem<K> implements Comparable<StatsItem<K>>{
+    final K key;
+    long leftSideElements = 0;
+    long rightSideElements = 0;
+
+    public StatsItem(K key) {
+      this.key = key;
+    }
+
+    @Override
+    public int compareTo(StatsItem<K> o) {
+      return Long.compare(elementsCount(), o.elementsCount());
+    }
+
+    long elementsCount(){
+      return leftSideElements + rightSideElements;
+    }
+
   }
 }
