@@ -91,7 +91,7 @@ public class BroadcastHashJoinTranslator implements SparkOperatorTranslator<Join
     }
   }
 
-  static boolean wantTranslate(Join o) {
+  static boolean wantTranslate(Join o, SparkFlowTranslator.AcceptorContext context) {
     return wantTranslateBroadcastHashJoin(o);
   }
 

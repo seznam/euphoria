@@ -50,7 +50,7 @@ class ReduceByKeyTranslator implements SparkOperatorTranslator<ReduceByKey> {
 
   private static final Logger LOG = LoggerFactory.getLogger(ReduceByKeyTranslator.class);
 
-  static boolean wantTranslate(ReduceByKey operator) {
+  static boolean wantTranslate(ReduceByKey operator, SparkFlowTranslator.AcceptorContext context) {
     return (operator.getValueComparator() == null
             || ClassUtils.isComparable(operator.getKeyClass()))
         && (operator.getWindowing() == null

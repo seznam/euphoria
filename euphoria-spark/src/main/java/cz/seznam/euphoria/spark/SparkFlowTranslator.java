@@ -16,7 +16,6 @@
 package cz.seznam.euphoria.spark;
 
 import cz.seznam.euphoria.core.client.flow.Flow;
-import cz.seznam.euphoria.core.client.functional.UnaryPredicate;
 import cz.seznam.euphoria.core.client.io.DataSink;
 import cz.seznam.euphoria.core.client.operator.FlatMap;
 import cz.seznam.euphoria.core.client.operator.Join;
@@ -31,6 +30,8 @@ import cz.seznam.euphoria.core.executor.graph.Node;
 import cz.seznam.euphoria.core.util.Settings;
 import cz.seznam.euphoria.hadoop.output.DataSinkOutputFormat;
 import cz.seznam.euphoria.spark.accumulators.SparkAccumulatorFactory;
+import java.util.Comparator;
+import java.util.function.BiPredicate;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.mapreduce.JobContext;
@@ -61,13 +62,16 @@ class SparkFlowTranslator {
   private final JavaSparkContext sparkEnv;
   private final Settings settings;
   private final SparkAccumulatorFactory accumulatorFactory;
+  private final Map<Class<?>, Comparator<?>> comparators;
 
   SparkFlowTranslator(JavaSparkContext sparkEnv,
                       Settings flowSettings,
-                      SparkAccumulatorFactory accumulatorFactory) {
+                      SparkAccumulatorFactory accumulatorFactory,
+                      Map<Class<?>, Comparator<?>> comparators) {
     this.sparkEnv = Objects.requireNonNull(sparkEnv);
     this.settings = Objects.requireNonNull(flowSettings);
     this.accumulatorFactory = Objects.requireNonNull(accumulatorFactory);
+    this.comparators = Objects.requireNonNull(comparators);
 
     // ~ basic operators
     Translation.add(translations, FlowUnfolder.InputOperator.class, new InputTranslator());
@@ -91,10 +95,11 @@ class SparkFlowTranslator {
   @SuppressWarnings("unchecked")
   List<DataSink<?>> translateInto(Flow flow, StorageLevel storageLevel) {
     // ~ transform flow to direct acyclic graph of supported operators
-    final DAG<Operator<?, ?>> dag = flowToDag(flow);
+    final AcceptorContext context = new AcceptorContext(comparators);
+    final DAG<Operator<?, ?>> dag = flowToDag(flow, new AcceptorContext(comparators));
 
     final SparkExecutorContext executorContext =
-        new SparkExecutorContext(sparkEnv, dag, accumulatorFactory, settings);
+        new SparkExecutorContext(sparkEnv, dag, accumulatorFactory, settings, comparators);
 
     // ~ translate each operator to proper Spark transformation
     dag.traverse().map(Node::get).forEach(op -> {
@@ -106,7 +111,7 @@ class SparkFlowTranslator {
       // ~ verify the flowToDag translation
       Translation firstMatch = null;
       for (Translation tx : txs) {
-        if (tx.accept == null || Boolean.TRUE.equals(tx.accept.apply(op))) {
+        if (tx.accept == null || tx.accept.test(op, context)) {
           firstMatch = tx;
           break;
         }
@@ -162,6 +167,19 @@ class SparkFlowTranslator {
     return sinks;
   }
 
+  public static final class AcceptorContext {
+
+    private Map<Class<?>, Comparator<?>> comparators;
+
+    AcceptorContext(Map<Class<?>, Comparator<?>> comparators) {
+      this.comparators = comparators;
+    }
+
+    public boolean hasComparator(@Nullable Class<?> clazz) {
+      return clazz != null && comparators.containsKey(clazz);
+    }
+  }
+
   /**
    * A functor to accept operators for translation if the  operator's
    * type equals a specified, fixed type. An optional custom "accept"
@@ -171,22 +189,23 @@ class SparkFlowTranslator {
    *
    * @param <O> the fixed operator type accepted
    */
-  public static final class TranslateAcceptor<O>
-      implements UnaryPredicate<Operator<?, ?>> {
+  public static final class TranslateAcceptor<O extends Operator<?, ?>>
+      implements BiPredicate<O, AcceptorContext> {
 
     final Class<O> type;
-    @Nullable
-    final UnaryPredicate<O> accept;
 
-    TranslateAcceptor(Class<O> type, @Nullable UnaryPredicate<O> accept) {
+    @Nullable
+    final BiPredicate<O, AcceptorContext> accept;
+
+    TranslateAcceptor(Class<O> type, @Nullable BiPredicate<O, AcceptorContext> accept) {
       this.type = Objects.requireNonNull(type);
       this.accept = accept;
     }
 
     @Override
-    public Boolean apply(Operator<?, ?> operator) {
+    public boolean test(O operator, AcceptorContext context) {
       return type == operator.getClass()
-          && (accept == null || accept.apply(type.cast(operator)));
+          && (accept == null || accept.test(type.cast(operator), context));
     }
   }
 
@@ -204,7 +223,8 @@ class SparkFlowTranslator {
    * @throws IllegalStateException if validation of the specified flow failed
    *          for some reason
    */
-  private DAG<Operator<?, ?>> flowToDag(Flow flow) {
+  @SuppressWarnings("unchecked")
+  private DAG<Operator<?, ?>> flowToDag(Flow flow, AcceptorContext context) {
     // ~ get acceptors for translation
     final Map<Class, Collection<TranslateAcceptor>> acceptors =
         buildAcceptorsIndex(getAcceptors());
@@ -213,8 +233,8 @@ class SparkFlowTranslator {
       // accept the operator if any of the specified acceptors says so
       final Collection<TranslateAcceptor> accs = acceptors.get(operator.getClass());
       if (accs != null && !accs.isEmpty()) {
-        for (TranslateAcceptor<?> acc : accs) {
-          if (acc.apply(operator)) {
+        for (TranslateAcceptor<Operator<?, ?>> acc : accs) {
+          if (acc.test(operator, context)) {
             return true;
           }
         }
@@ -249,23 +269,27 @@ class SparkFlowTranslator {
   private static class Translation<O extends Operator<?, ?>> {
 
     final SparkOperatorTranslator<O> translator;
-    final UnaryPredicate<O> accept;
+    final BiPredicate<O, AcceptorContext> accept;
 
-    private Translation(SparkOperatorTranslator<O> translator, UnaryPredicate<O> accept) {
+    private Translation(
+        SparkOperatorTranslator<O> translator,
+        BiPredicate<O, AcceptorContext> accept) {
       this.translator = Objects.requireNonNull(translator);
       this.accept = accept;
     }
 
-    static <O extends Operator<?, ?>> void add(Map<Class, List<Translation>> idx,
-                                               Class<O> type,
-                                               SparkOperatorTranslator<O> translator) {
+    static <O extends Operator<?, ?>> void add(
+        Map<Class, List<Translation>> idx,
+        Class<O> type,
+        SparkOperatorTranslator<O> translator) {
       add(idx, type, translator, null);
     }
 
-    static <O extends Operator<?, ?>> void add(Map<Class, List<Translation>> idx,
-                                               Class<O> type,
-                                               SparkOperatorTranslator<O> translator,
-                                               UnaryPredicate<O> accept) {
+    static <O extends Operator<?, ?>> void add(
+        Map<Class, List<Translation>> idx,
+        Class<O> type,
+        SparkOperatorTranslator<O> translator,
+        BiPredicate<O, AcceptorContext> accept) {
       if (!idx.containsKey(type)) {
         idx.put(type, new ArrayList<>());
       }

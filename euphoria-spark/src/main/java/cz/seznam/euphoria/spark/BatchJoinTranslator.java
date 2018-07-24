@@ -22,12 +22,15 @@ import cz.seznam.euphoria.core.client.util.Pair;
 import cz.seznam.euphoria.core.util.ClassUtils;
 import cz.seznam.euphoria.shadow.com.google.common.base.Preconditions;
 import cz.seznam.euphoria.shadow.com.google.common.collect.Iterators;
+import cz.seznam.euphoria.shadow.com.google.common.collect.Ordering;
+import java.io.Serializable;
+import java.util.Comparator;
+import javax.annotation.Nullable;
 import org.apache.spark.Partitioner;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
 import scala.Tuple2;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -66,16 +69,10 @@ import java.util.List;
 class BatchJoinTranslator implements SparkOperatorTranslator<Join> {
 
   @SuppressWarnings("unchecked")
-  static boolean wantTranslate(Join join) {
-    return (join.getWindowing() == null || join.getWindowing() instanceof GlobalWindowing)
-        && ClassUtils.isComparable(join.getKeyClass());
+  static boolean wantTranslate(Join join, SparkFlowTranslator.AcceptorContext context) {
+    return (join.getWindowing() == null || join.getWindowing() instanceof GlobalWindowing) &&
+        (ClassUtils.isComparable(join.getKeyClass()) || context.hasComparator(join.getKeyClass()));
   }
-
-  /**
-   * Number of partitions across which to distribute right-side items for individual left-side items
-   * (also number of copies of each left-side item to make)
-   */
-  private static final int NUM_DUPLICITIES = 1;
 
   @Override
   @SuppressWarnings("unchecked")
@@ -92,17 +89,12 @@ class BatchJoinTranslator implements SparkOperatorTranslator<Join> {
     final int numPartitions = right.getNumPartitions();
 
     final JavaPairRDD<BatchJoinKey<Object>, Either<SparkElement, SparkElement>> leftPair =
-        left.flatMapToPair(
+        left.mapToPair(
                 se -> {
                   final Object key = operator.getLeftKeyExtractor().apply(se.getElement());
-                  return selectPartitionIdxsForKey(key, numPartitions, NUM_DUPLICITIES)
-                      .stream()
-                      .map(
-                          partitionIdx ->
-                              new Tuple2<>(
-                                  new BatchJoinKey<>(key, BatchJoinKey.Side.LEFT, partitionIdx),
-                                  Either.<SparkElement, SparkElement>left(se)))
-                      .iterator();
+                  return new Tuple2<>(
+                      new BatchJoinKey<>(key, BatchJoinKey.Side.LEFT),
+                      Either.<SparkElement, SparkElement>left(se));
                 })
             .setName(operator.getName() + "::wrap-keys");
 
@@ -110,21 +102,24 @@ class BatchJoinTranslator implements SparkOperatorTranslator<Join> {
         right.mapToPair(
             se -> {
               final Object key = operator.getRightKeyExtractor().apply(se.getElement());
-              final List<Integer> partitionIdxs =
-                  selectPartitionIdxsForKey(key, numPartitions, NUM_DUPLICITIES);
-              final int partitionIdx = selectPartitionIdx(se, partitionIdxs);
               return new Tuple2<>(
-                  new BatchJoinKey<>(key, BatchJoinKey.Side.RIGHT, partitionIdx), Either.right(se));
+                  new BatchJoinKey<>(key, BatchJoinKey.Side.RIGHT),
+                  Either.right(se));
             });
 
     rightPair.setName(operator.getName() + "::wrap-values");
 
     final Partitioner partitioner = new BatchPartitioner(numPartitions);
 
+    final Comparator<BatchJoinKey<Object>> comparator =
+        context.getComparator(operator.getKeyClass()) != null
+            ? new BatchJoinKeyComparator<>(context.getComparator(operator.getKeyClass()))
+            : new BatchJoinKeyComparator<>(null);
+
     return leftPair
         .union(rightPair)
         .setName(operator.getName() + "::union-inputs")
-        .repartitionAndSortWithinPartitions(partitioner)
+        .repartitionAndSortWithinPartitions(partitioner, comparator)
         .setName(operator.getName() + "::sort-by-key-and-side")
         .mapPartitions(
             iterator -> new JoinIterator<>(new BatchJoinIterator<>(iterator), operator.getType()))
@@ -159,27 +154,6 @@ class BatchJoinTranslator implements SparkOperatorTranslator<Join> {
         .setName(operator.getName() + "::apply-udf-and-wrap-in-spark-element");
   }
 
-  private static <KEY> List<Integer> selectPartitionIdxsForKey(
-      KEY key, int numPartitions, int numDuplicities) {
-
-    final List<Integer> result = new ArrayList<>(numDuplicities);
-
-    int startIdx = positive(key.hashCode()) % numPartitions;
-    result.add(startIdx);
-
-    int offset = numPartitions / numDuplicities;
-
-    int count = 1;
-    int nextIdx = startIdx;
-    while (count < numDuplicities) {
-      nextIdx = (nextIdx + offset) % numPartitions;
-      result.add(nextIdx);
-      count++;
-    }
-
-    return result;
-  }
-
   /**
    * Maps the set of all integer numbers to the set of positive integer numbers, with minimum
    * collisions. Returns the positive integer corresponding to the given value.
@@ -199,11 +173,6 @@ class BatchJoinTranslator implements SparkOperatorTranslator<Join> {
     return value & Integer.MAX_VALUE;
   }
 
-  private static int selectPartitionIdx(Object item, List<Integer> list) {
-    return list.get(positive(item.hashCode()) % list.size());
-  }
-
-  /** Partitioner that resolves partition from {@link BatchJoinKey#getPartitionIdx} */
   private static class BatchPartitioner extends Partitioner {
 
     private final int numPartitions;
@@ -219,7 +188,46 @@ class BatchJoinTranslator implements SparkOperatorTranslator<Join> {
 
     @Override
     public int getPartition(Object obj) {
-      return ((BatchJoinKey) obj).getPartitionIdx();
+      int x = positive(((BatchJoinKey) obj).getKey().hashCode()) % numPartitions;
+      return positive(((BatchJoinKey) obj).getKey().hashCode()) % numPartitions;
+    }
+  }
+
+  private static class BatchJoinKeyComparator<K>
+      implements Comparator<BatchJoinKey<K>>, Serializable {
+
+    @Nullable
+    private final Comparator<K> delegate;
+
+    BatchJoinKeyComparator(@Nullable Comparator<K> delegate) {
+      this.delegate = delegate;
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public int compare(BatchJoinKey<K> o1, BatchJoinKey<K> o2) {
+      final int keyResult;
+      if (delegate == null) {
+        // we know that key is comparable
+        keyResult = ((Comparable<K>) o1.getKey()).compareTo(o2.getKey());
+      } else {
+        keyResult = delegate.compare(o1.getKey(), o2.getKey());
+      }
+      if (keyResult == 0) {
+        return compareSide(o1.getSide(), o2.getSide());
+      }
+      return keyResult;
+    }
+
+    private static int compareSide(BatchJoinKey.Side a, BatchJoinKey.Side b) {
+      // ~ LEFT side precedes RIGHT side
+      if (a.equals(b)) {
+        return 0;
+      }
+      if (a.equals(BatchJoinKey.Side.LEFT)) {
+        return -1;
+      }
+      return 1;
     }
   }
 }

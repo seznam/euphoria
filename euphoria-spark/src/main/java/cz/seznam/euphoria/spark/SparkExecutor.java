@@ -23,7 +23,11 @@ import cz.seznam.euphoria.core.client.io.DataSink;
 import cz.seznam.euphoria.core.executor.Executor;
 import cz.seznam.euphoria.core.util.Settings;
 import cz.seznam.euphoria.shadow.com.google.common.base.Preconditions;
+import cz.seznam.euphoria.shadow.com.google.common.collect.ImmutableMap;
 import cz.seznam.euphoria.spark.accumulators.SparkAccumulatorFactory;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.Map;
 import org.apache.commons.lang3.SerializationUtils;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaSparkContext;
@@ -78,6 +82,7 @@ public class SparkExecutor implements Executor {
     private Class<? extends SparkKryoRegistrator> registrator = null;
     private StorageLevel storageLevel = StorageLevel.MEMORY_AND_DISK_SER();
     private long desiredSplitSize = -1;
+    private final Map<Class<?>, Comparator<?>> comparators = new HashMap<>();
 
     private Builder(String appName, SparkConf conf) {
       this.appName = appName;
@@ -169,6 +174,16 @@ public class SparkExecutor implements Executor {
       return this;
     }
 
+    /**
+     * Force kryo to accept non registered classes. Not recommended.
+     *
+     * @return builder
+     */
+    public <T> Builder registerComparator(Class<T> clazz, Comparator<T> comparator) {
+      comparators.put(clazz, comparator);
+      return this;
+    }
+
     public SparkExecutor build() {
       conf.setAppName(appName);
       // make sure we use kryo
@@ -182,7 +197,8 @@ public class SparkExecutor implements Executor {
         conf.set("spark.kryo.registrationRequired", "true");
         conf.set("spark.kryo.registrator", registrator.getName());
       }
-      return new SparkExecutor(conf, storageLevel, desiredSplitSize);
+      return new SparkExecutor(
+          conf, storageLevel, desiredSplitSize, ImmutableMap.copyOf(comparators));
     }
   }
 
@@ -195,15 +211,22 @@ public class SparkExecutor implements Executor {
 
   private final long desiredSplitSize;
 
+  private final Map<Class<?>, Comparator<?>> comparators;
+
   private final ExecutorService submitExecutor = Executors.newCachedThreadPool();
 
   private SparkAccumulatorFactory accumulatorFactory =
       new SparkAccumulatorFactory.Adapter(VoidAccumulatorProvider.getFactory());
 
-  private SparkExecutor(SparkConf conf, StorageLevel storageLevel, long desiredSplitSize) {
+  private SparkExecutor(
+      SparkConf conf,
+      StorageLevel storageLevel,
+      long desiredSplitSize,
+      Map<Class<?>, Comparator<?>> comparators) {
     this.sparkContext = new JavaSparkContext(conf);
     this.storageLevel = storageLevel;
     this.desiredSplitSize = desiredSplitSize;
+    this.comparators = comparators;
   }
 
   @Override
@@ -257,7 +280,7 @@ public class SparkExecutor implements Executor {
 
       // FIXME blocking operation in Spark
       final SparkFlowTranslator translator =
-          new SparkFlowTranslator(sparkContext, settings, clonedFactory);
+          new SparkFlowTranslator(sparkContext, settings, clonedFactory, comparators);
 
       sinks = translator.translateInto(flow, storageLevel);
     } catch (Exception e) {
