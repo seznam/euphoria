@@ -22,6 +22,8 @@ import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A general purpose data source based on top of hadoop input formats.
@@ -30,6 +32,8 @@ import java.util.List;
  * @param <V> the type of record values
  */
 public class HadoopFileSource<K, V> extends HadoopSource<K, V> {
+
+  private static final Logger LOG = LoggerFactory.getLogger(HadoopFileSource.class);
 
   /**
    * Split size to use, if we are not satisfied with the one user provided.
@@ -48,8 +52,12 @@ public class HadoopFileSource<K, V> extends HadoopSource<K, V> {
   @Override
   public List<BoundedDataSource<Pair<K, V>>> split(long desiredSplitSizeBytes) {
     final Job job = newJob();
-    FileInputFormat.setMinInputSplitSize(job, Math.max(MIN_SPLIT_SIZE, desiredSplitSizeBytes));
-    FileInputFormat.setMaxInputSplitSize(job, Math.max(MIN_SPLIT_SIZE, desiredSplitSizeBytes));
+    long splitSize = Math.max(MIN_SPLIT_SIZE, desiredSplitSizeBytes);
+    LOG.info(String.format("%s's max and min input split size will be set to %,d .",
+        FileInputFormat.class.getSimpleName(), desiredSplitSizeBytes));
+
+    FileInputFormat.setMinInputSplitSize(job, splitSize);
+    FileInputFormat.setMaxInputSplitSize(job, splitSize);
     return doSplit(job);
   }
 

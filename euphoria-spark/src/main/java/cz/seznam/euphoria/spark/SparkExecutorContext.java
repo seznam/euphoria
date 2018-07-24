@@ -15,13 +15,14 @@
  */
 package cz.seznam.euphoria.spark;
 
-import cz.seznam.euphoria.core.client.dataset.windowing.Window;
 import cz.seznam.euphoria.core.executor.graph.DAG;
 import cz.seznam.euphoria.core.executor.graph.Node;
 import cz.seznam.euphoria.core.client.operator.Operator;
 import cz.seznam.euphoria.core.util.Settings;
 import cz.seznam.euphoria.shadow.com.google.common.collect.Iterables;
 import cz.seznam.euphoria.spark.accumulators.SparkAccumulatorFactory;
+import java.util.Comparator;
+import javax.annotation.Nullable;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 
@@ -42,16 +43,19 @@ public class SparkExecutorContext {
 
   private final SparkAccumulatorFactory accumulatorFactory;
   private final Settings settings;
+  private final Map<Class<?>, Comparator<?>> comparators;
 
 
   public SparkExecutorContext(JavaSparkContext env,
                               DAG<Operator<?, ?>> dag,
                               SparkAccumulatorFactory accumulatorFactory,
-                              Settings settings) {
+                              Settings settings,
+                              Map<Class<?>, Comparator<?>> comparators) {
     this.env = env;
     this.dag = dag;
     this.accumulatorFactory = accumulatorFactory;
     this.settings = settings;
+    this.comparators = comparators;
     this.outputs = new IdentityHashMap<>();
   }
 
@@ -130,5 +134,11 @@ public class SparkExecutorContext {
 
   public Settings getSettings() {
     return settings;
+  }
+
+  @Nullable
+  @SuppressWarnings("unchecked")
+  public <T> Comparator<T> getComparator(Class<T> clazz) {
+    return (Comparator) comparators.get(clazz);
   }
 }

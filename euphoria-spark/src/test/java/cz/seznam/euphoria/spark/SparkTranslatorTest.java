@@ -27,6 +27,7 @@ import cz.seznam.euphoria.core.client.operator.hint.ComputationHint;
 import cz.seznam.euphoria.core.client.util.Pair;
 import cz.seznam.euphoria.core.testing.DatasetAssert;
 import cz.seznam.euphoria.spark.accumulators.SparkAccumulatorFactory;
+import java.util.HashMap;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
@@ -97,7 +98,7 @@ public class SparkTranslatorTest {
     final SparkAccumulatorFactory mockedFactory = mock(SparkAccumulatorFactory.class);
 
     final SparkFlowTranslator translator =
-        new SparkFlowTranslator(sparkContext, flow.getSettings(), mockedFactory);
+        new SparkFlowTranslator(sparkContext, flow.getSettings(), mockedFactory, new HashMap<>());
     translator.translateInto(flow, StorageLevel.MEMORY_ONLY());
 
     assertEquals(2, sparkContext.getPersistentRDDs().size());

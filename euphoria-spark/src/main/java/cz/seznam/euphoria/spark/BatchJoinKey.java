@@ -15,11 +15,7 @@
  */
 package cz.seznam.euphoria.spark;
 
-import cz.seznam.euphoria.shadow.com.google.common.base.Preconditions;
-
-import javax.annotation.Nonnull;
-
-class BatchJoinKey<KEY> implements Comparable<BatchJoinKey<KEY>> {
+class BatchJoinKey<KEY> {
 
   enum Side {
     LEFT,
@@ -28,13 +24,10 @@ class BatchJoinKey<KEY> implements Comparable<BatchJoinKey<KEY>> {
 
   private final KEY key;
   private final Side side;
-  private final int partitionIdx;
 
-  BatchJoinKey(KEY key, Side side, int partitionIdx) {
-    Preconditions.checkArgument(key instanceof Comparable, "Key is not comparable.");
+  BatchJoinKey(KEY key, Side side) {
     this.key = key;
     this.side = side;
-    this.partitionIdx = partitionIdx;
   }
 
   KEY getKey() {
@@ -43,40 +36,5 @@ class BatchJoinKey<KEY> implements Comparable<BatchJoinKey<KEY>> {
 
   Side getSide() {
     return side;
-  }
-
-  int getPartitionIdx() {
-    return partitionIdx;
-  }
-
-  @Override
-  @SuppressWarnings("unchecked")
-  public int compareTo(@Nonnull BatchJoinKey<KEY> other) {
-    int result = ((Comparable) getKey()).compareTo(other.getKey());
-    if (result == 0) {
-      return compareSide(getSide(), other.getSide());
-    }
-    return result;
-  }
-
-  private static int compareSide(Side a, Side b) {
-    // ~ LEFT side precedes RIGHT side
-    if (a.equals(b)) {
-      return 0;
-    }
-    if (a.equals(Side.LEFT)) {
-      return -1;
-    }
-    return 1;
-
-  }
-
-  @Override
-  public String toString() {
-    return "BatchJoinKey{" +
-        "key=" + key +
-        ", side=" + side +
-        ", partitionIdx=" + partitionIdx +
-        '}';
   }
 }

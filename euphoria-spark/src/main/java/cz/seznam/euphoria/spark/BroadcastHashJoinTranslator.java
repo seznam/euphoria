@@ -26,11 +26,9 @@ import cz.seznam.euphoria.core.client.operator.Join;
 import cz.seznam.euphoria.core.client.operator.hint.SizeHint;
 import cz.seznam.euphoria.core.client.util.Either;
 import cz.seznam.euphoria.core.client.util.Pair;
-import java.util.IdentityHashMap;
 import java.util.Objects;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
-import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.Optional;
 import org.apache.spark.api.java.function.PairFlatMapFunction;
 import org.apache.spark.broadcast.Broadcast;
@@ -93,7 +91,7 @@ public class BroadcastHashJoinTranslator implements SparkOperatorTranslator<Join
     }
   }
 
-  static boolean wantTranslate(Join o) {
+  static boolean wantTranslate(Join o, SparkFlowTranslator.AcceptorContext context) {
     return wantTranslateBroadcastHashJoin(o);
   }
 
