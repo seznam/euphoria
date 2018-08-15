@@ -242,21 +242,14 @@ public class SparkExecutor implements Executor {
     submitExecutor.shutdownNow();
   }
 
-  /**
-   * Set accumulator provider that will be used to collect metrics and counters.
-   * When no provider is set a default instance of {@link VoidAccumulatorProvider}
-   * will be used.
-   *
-   * @param factory Factory to create an instance of accumulator provider.
-   */
-  public void setAccumulatorProvider(SparkAccumulatorFactory factory) {
-    this.accumulatorFactory = Objects.requireNonNull(factory);
-  }
-
   @Override
   public void setAccumulatorProvider(AccumulatorProvider.Factory factory) {
-    this.accumulatorFactory = new SparkAccumulatorFactory.Adapter(
-        Objects.requireNonNull(factory));
+    Objects.requireNonNull(factory);
+    if (factory instanceof SparkAccumulatorFactory) {
+      this.accumulatorFactory = (SparkAccumulatorFactory) factory;
+    } else {
+      this.accumulatorFactory = new SparkAccumulatorFactory.Adapter(factory);
+    }
   }
 
   private Result execute(Flow flow) {
