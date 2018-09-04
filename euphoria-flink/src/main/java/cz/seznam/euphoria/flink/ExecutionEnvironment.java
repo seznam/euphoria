@@ -27,12 +27,14 @@ import cz.seznam.euphoria.core.client.util.Triple;
 import cz.seznam.euphoria.flink.batch.BatchElement;
 import cz.seznam.euphoria.flink.streaming.StreamingElement;
 import cz.seznam.euphoria.flink.streaming.windowing.KeyedMultiWindowedElement;
+import java.io.Serializable;
+import java.util.HashSet;
+import java.util.Set;
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
 
 /**
  * Unified interface for Flink batch and stream execution environments.
@@ -59,10 +61,9 @@ public class ExecutionEnvironment {
   ExecutionEnvironment(
       Mode mode,
       boolean local,
-      int parallelism,
-      HashMap<Class<?>, Class<? extends Serializer>> registeredClasses) {
+      int parallelism) {
 
-    HashMap<Class<?>, Class<? extends Serializer>> toRegister = getClassesToRegister(registeredClasses);
+    Set<Class<?>> toRegister = getClassesToRegister();
 
     LOG.info(
         "Creating ExecutionEnvironment mode {} with parallelism {}",
@@ -70,11 +71,11 @@ public class ExecutionEnvironment {
     if (mode == Mode.BATCH) {
       batchEnv = local ? org.apache.flink.api.java.ExecutionEnvironment.createLocalEnvironment(parallelism) :
               org.apache.flink.api.java.ExecutionEnvironment.getExecutionEnvironment();
-      registerClasses(toRegister, batchEnv);
+      toRegister.forEach(batchEnv::registerType);
     } else {
       streamEnv = local ? StreamExecutionEnvironment.createLocalEnvironment(parallelism) :
               StreamExecutionEnvironment.getExecutionEnvironment();
-      registerClasses(toRegister, streamEnv);
+      toRegister.forEach(streamEnv::registerType);
     }
     LOG.info("Registered classes {} within flink's runtime", toRegister);
   }
@@ -140,42 +141,43 @@ public class ExecutionEnvironment {
     return Mode.BATCH;
   }
 
-  @SuppressWarnings("unchecked")
-  private void registerClasses(HashMap<Class<?>, Class<? extends Serializer>> toRegister,
-                               org.apache.flink.api.java.ExecutionEnvironment environment) {
-    toRegister.forEach((Class<?> key, Class<? extends Serializer> value) -> {
-      if (value != null) {
-        environment.registerTypeWithKryoSerializer(key, (Class<? extends Serializer<?>>) value);
-      } else {
-        environment.registerType(key);
-      }
-    });
-  }
-
-  private void registerClasses(HashMap<Class<?>, Class<? extends Serializer>> toRegister,
-                               StreamExecutionEnvironment environment) {
-    toRegister.forEach((Class<?> key, Class<? extends Serializer> value) -> {
-      if (value != null) {
-        environment.registerTypeWithKryoSerializer(key, value);
-      } else {
-        environment.registerType(key);
-      }
-    });
-  }
-
-  private HashMap<Class<?>, Class<? extends Serializer>> getClassesToRegister(
-      HashMap<Class<?>, Class<? extends Serializer>> registeredClasses) {
-    HashMap<Class<?>, Class<? extends Serializer>> ret = new HashMap<>(registeredClasses);
+  private Set<Class<?>> getClassesToRegister() {
+    Set<Class<?>> ret = new HashSet<>();
     // register all types of used windows
-    ret.put(GlobalWindowing.Window.class, null);
-    ret.put(TimeInterval.class, null);
-    ret.put(TimeSliding.SlidingWindowSet.class, null);
-    ret.put(Either.class, null);
-    ret.put(Pair.class, null);
-    ret.put(Triple.class, null);
-    ret.put(StreamingElement.class, null);
-    ret.put(BatchElement.class, null);
-    ret.put(KeyedMultiWindowedElement.class, null);
+    ret.add(GlobalWindowing.Window.class);
+    ret.add(TimeInterval.class);
+    ret.add(TimeSliding.SlidingWindowSet.class);
+    ret.add(Either.class);
+    ret.add(Pair.class);
+    ret.add(Triple.class);
+    ret.add(StreamingElement.class);
+    ret.add(BatchElement.class);
+    ret.add(KeyedMultiWindowedElement.class);
     return ret;
   }
+
+  void registerClass(Class<?> cls) {
+    if (batchEnv == null) {
+      streamEnv.registerType(cls);
+    } else {
+      batchEnv.registerType(cls);
+    }
+  }
+
+  void registerClass(Class<?> cls, Class<? extends Serializer<?>> classSerializer) {
+    if (batchEnv == null) {
+      streamEnv.registerTypeWithKryoSerializer(cls, classSerializer);
+    } else {
+      batchEnv.registerTypeWithKryoSerializer(cls, classSerializer);
+    }
+  }
+
+  <T extends Serializer<?> & Serializable> void registerClass(Class<?> cls, T serializer) {
+    if (batchEnv == null) {
+      streamEnv.registerTypeWithKryoSerializer(cls, serializer);
+    } else {
+      batchEnv.registerTypeWithKryoSerializer(cls, serializer);
+    }
+  }
+
 }
