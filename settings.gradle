@@ -21,6 +21,7 @@ include ':euphoria-spark'
 
 // ~ extras
 include ':euphoria-fluent'
+include ':euphoria-beam-io'
 
 // ~ examples
 include ':euphoria-examples'

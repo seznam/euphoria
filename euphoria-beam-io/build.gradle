@@ -1,0 +1,8 @@
+ext {
+  beamVersion = '2.6.0'
+}
+
+dependencies {
+  compile project(':euphoria-core')
+  compile "org.apache.beam:beam-sdks-java-core:${beamVersion}"
+}
