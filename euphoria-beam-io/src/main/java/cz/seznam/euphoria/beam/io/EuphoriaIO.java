@@ -30,6 +30,16 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
 
+/**
+ * EuphoriaIO is read connector to Beam where DataSource is transformed to PCollection.
+ * It's useful for smoother transition between Euphoria and Beamphoria
+ *
+ * E.g.:
+ * {@code
+ * PCollection<KV<Text, ImmutableBytesWritable>> input =
+ *    pipeline.apply(EuphoriaIO.read(dataSource, kvCoderTextBytes));
+ * }
+ */
 public class EuphoriaIO {
 
   public static <T> Read<T> read(DataSource<T> dataSource, Coder<T> outputCoder) {
