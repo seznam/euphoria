@@ -17,28 +17,27 @@ package cz.seznam.euphoria.hbase;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
+import cz.seznam.euphoria.hadoop.output.HadoopSink;
+import cz.seznam.euphoria.hadoop.output.HadoopSink.HadoopWriter;
+import cz.seznam.euphoria.hbase.util.RecursiveAllPathIterator;
+import com.google.common.base.Strings;
 import cz.seznam.euphoria.core.client.dataset.Dataset;
-import cz.seznam.euphoria.core.client.dataset.windowing.Windowing;
 import cz.seznam.euphoria.core.client.dataset.windowing.Window;
+import cz.seznam.euphoria.core.client.dataset.windowing.Windowing;
 import cz.seznam.euphoria.core.client.functional.UnaryFunction;
 import cz.seznam.euphoria.core.client.io.Collector;
 import cz.seznam.euphoria.core.client.io.DataSink;
 import cz.seznam.euphoria.core.client.io.VoidSink;
 import cz.seznam.euphoria.core.client.io.Writer;
 import cz.seznam.euphoria.core.client.operator.MapElements;
-import cz.seznam.euphoria.core.client.operator.OptionalMethodBuilder;
 import cz.seznam.euphoria.core.client.operator.ReduceByKey;
 import cz.seznam.euphoria.core.client.operator.ReduceWindow;
+import cz.seznam.euphoria.core.client.operator.base.OptionalMethodBuilder;
 import cz.seznam.euphoria.core.client.util.Pair;
 import cz.seznam.euphoria.core.util.ExceptionUtils;
-import cz.seznam.euphoria.hadoop.output.HadoopSink;
-import cz.seznam.euphoria.hadoop.output.HadoopSink.HadoopWriter;
-import cz.seznam.euphoria.hbase.util.RecursiveAllPathIterator;
-import cz.seznam.euphoria.shadow.com.google.common.base.Strings;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.LocatedFileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.RemoteIterator;
 import org.apache.hadoop.fs.permission.FsAction;
@@ -66,7 +65,6 @@ import org.slf4j.LoggerFactory;
 import javax.annotation.Nullable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.file.Files;
 import java.security.PrivilegedAction;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -101,7 +99,7 @@ public class HFileSink implements DataSink<Cell> {
     return new Builder();
   }
 
-  public static class Builder implements OptionalMethodBuilder<Builder> {
+  public static class Builder implements OptionalMethodBuilder<Builder, Builder> {
 
     private Configuration conf = HBaseConfiguration.create();
     private String table = null;
@@ -223,6 +221,10 @@ public class HFileSink implements DataSink<Cell> {
           table, doBulkLoad, windowing, folderNaming, conf, updaters);
     }
 
+    @Override
+    public Builder applyIf(boolean cond, UnaryFunction applyWhenConditionHolds) {
+      return null;
+    }
   }
 
   private final String tableName;

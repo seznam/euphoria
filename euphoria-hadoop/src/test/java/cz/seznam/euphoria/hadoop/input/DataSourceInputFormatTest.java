@@ -15,10 +15,11 @@
  */
 package cz.seznam.euphoria.hadoop.input;
 
+
 import cz.seznam.euphoria.core.client.io.BoundedDataSource;
 import cz.seznam.euphoria.core.client.io.BoundedReader;
 import cz.seznam.euphoria.core.client.io.UnsplittableBoundedSource;
-import cz.seznam.euphoria.core.client.util.Pair;
+import org.apache.beam.sdk.values.KV;
 import cz.seznam.euphoria.shadow.com.google.common.collect.Sets;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.NullWritable;
@@ -130,8 +131,8 @@ public class DataSourceInputFormatTest {
 
   @Test
   public void testDataSource() throws Exception {
-    DummySource<Pair<Long, Long>> source = new DummySource<>(
-        () -> Pair.of(
+    DummySource<KV<Long, Long>> source = new DummySource<>(
+        () -> KV.of(
                 Math.round(Math.random() * Long.MAX_VALUE),
                 Math.round(Math.random() * Long.MAX_VALUE)));
 
@@ -141,11 +142,11 @@ public class DataSourceInputFormatTest {
 
     when(tac.getConfiguration()).thenReturn(conf);
 
-    InputFormat<NullWritable, Pair<Long, Long>> inputFormat = new DataSourceInputFormat<>();
+    InputFormat<NullWritable, KV<Long, Long>> inputFormat = new DataSourceInputFormat<>();
     List<InputSplit> splits = inputFormat.getSplits(tac);
     assertEquals(2, splits.size());
 
-    try (RecordReader<NullWritable, Pair<Long, Long>> reader = inputFormat.createRecordReader(
+    try (RecordReader<NullWritable, KV<Long, Long>> reader = inputFormat.createRecordReader(
         splits.get(0), tac)) {
       reader.initialize(splits.get(0), tac);
       assertTrue(reader.nextKeyValue());
@@ -155,7 +156,7 @@ public class DataSourceInputFormatTest {
       assertFalse(reader.nextKeyValue());
     }
 
-    try (RecordReader<NullWritable, Pair<Long, Long>> reader = inputFormat.createRecordReader(
+    try (RecordReader<NullWritable, KV<Long, Long>> reader = inputFormat.createRecordReader(
         splits.get(1), tac)) {
       reader.initialize(splits.get(1), tac);
       assertTrue(reader.nextKeyValue());

@@ -17,10 +17,9 @@ package cz.seznam.euphoria.hadoop.input;
 
 import cz.seznam.euphoria.core.client.io.BoundedDataSource;
 import cz.seznam.euphoria.core.client.io.BoundedReader;
-import cz.seznam.euphoria.core.client.util.Pair;
 import cz.seznam.euphoria.core.util.ExceptionUtils;
 import cz.seznam.euphoria.hadoop.SerializableWritable;
-
+import org.apache.beam.sdk.values.KV;
 import org.apache.hadoop.conf.Configurable;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.InputFormat;
@@ -40,7 +39,7 @@ import java.util.stream.Collectors;
  * @param <V> type of value handled by the source
  */
 public class HadoopSource<K, V>
-    implements BoundedDataSource<Pair<K, V>> {
+    implements BoundedDataSource<KV<K, V>> {
 
   private final Class<K> keyClass;
   private final Class<V> valueClass;
@@ -59,11 +58,11 @@ public class HadoopSource<K, V>
   }
 
   @Override
-  public List<BoundedDataSource<Pair<K, V>>> split(long desiredSplitSizeBytes) {
+  public List<BoundedDataSource<KV<K, V>>> split(long desiredSplitSizeBytes) {
     return doSplit(newJob());
   }
 
-  protected List<BoundedDataSource<Pair<K, V>>> doSplit(Job job) {
+  protected List<BoundedDataSource<KV<K, V>>> doSplit(Job job) {
     return ExceptionUtils.unchecked(() -> newInputFormatClass()
         .getSplits(job)
         .stream()
@@ -106,7 +105,7 @@ public class HadoopSource<K, V>
   }
 
   @Override
-  public BoundedReader<Pair<K, V>> openReader() throws IOException {
+  public BoundedReader<KV<K, V>> openReader() throws IOException {
     throw new UnsupportedOperationException("Please call `split` on this source first.");
   }
 

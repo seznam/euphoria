@@ -16,12 +16,13 @@
 package cz.seznam.euphoria.hbase;
 
 import com.google.common.base.Preconditions;
+
+import cz.seznam.euphoria.hadoop.output.HadoopSink;
 import cz.seznam.euphoria.core.client.dataset.Dataset;
 import cz.seznam.euphoria.core.client.io.DataSink;
 import cz.seznam.euphoria.core.client.io.Writer;
 import cz.seznam.euphoria.core.client.operator.MapElements;
 import cz.seznam.euphoria.core.client.util.Pair;
-import cz.seznam.euphoria.hadoop.output.HadoopSink;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.client.Mutation;

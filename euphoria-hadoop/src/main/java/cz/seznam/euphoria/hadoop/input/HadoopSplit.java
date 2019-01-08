@@ -15,13 +15,16 @@
  */
 package cz.seznam.euphoria.hadoop.input;
 
-import cz.seznam.euphoria.core.client.io.BoundedReader;
-import cz.seznam.euphoria.core.client.io.UnsplittableBoundedSource;
-import cz.seznam.euphoria.core.client.util.Pair;
-import cz.seznam.euphoria.core.util.ExceptionUtils;
+import com.google.common.collect.AbstractIterator;
 import cz.seznam.euphoria.hadoop.utils.Cloner;
-import cz.seznam.euphoria.shadow.com.google.common.collect.AbstractIterator;
+
+import cz.seznam.euphoria.core.client.io.BoundedReader;
+import org.apache.beam.sdk.values.KV;
+import cz.seznam.euphoria.core.util.ExceptionUtils;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.io.serializer.Deserializer;
+import org.apache.hadoop.io.serializer.SerializationFactory;
+import org.apache.hadoop.io.serializer.Serializer;
 import org.apache.hadoop.mapreduce.InputSplit;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.RecordReader;
@@ -37,15 +40,12 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
-import org.apache.hadoop.io.serializer.Deserializer;
-import org.apache.hadoop.io.serializer.SerializationFactory;
-import org.apache.hadoop.io.serializer.Serializer;
 
 /**
  * Wraps Hadoop {@link InputSplit}
  */
 public class HadoopSplit<K, V>
-    extends UnsplittableBoundedSource<Pair<K, V>> {
+    extends UnsplittableBoundedSource<KV<K, V>> {
 
   private final HadoopSource<K, V> source;
   private final Set<String> locations;
@@ -71,7 +71,7 @@ public class HadoopSplit<K, V>
   }
 
   @Override
-  public BoundedReader<Pair<K, V>> openReader() throws IOException {
+  public BoundedReader<KV<K, V>> openReader() throws IOException {
     try {
       final InputSplit inputSplit = getInputSplit();
       final Job job = source.newJob();
@@ -133,8 +133,8 @@ public class HadoopSplit<K, V>
    * Wraps Hadoop {@link RecordReader}
    */
   static class HadoopReader<K, V>
-      extends AbstractIterator<Pair<K, V>>
-      implements BoundedReader<Pair<K, V>> {
+      extends AbstractIterator<KV<K, V>>
+      implements BoundedReader<KV<K, V>> {
 
     private final RecordReader<K, V> reader;
     private final Cloner<K> keyCloner;
@@ -151,14 +151,14 @@ public class HadoopSplit<K, V>
     }
 
     @Override
-    protected Pair<K, V> computeNext() {
+    protected KV<K, V> computeNext() {
       return ExceptionUtils.unchecked(() -> {
         if (reader.nextKeyValue()) {
           final K key = reader.getCurrentKey();
           final V value = reader.getCurrentValue();
           // ~ clone key values since they are reused
           // between calls to RecordReader#nextKeyValue
-          return Pair.of(keyCloner.clone(key), valueCloner.clone(value));
+          return KV.of(keyCloner.clone(key), valueCloner.clone(value));
         } else {
           return endOfData();
         }

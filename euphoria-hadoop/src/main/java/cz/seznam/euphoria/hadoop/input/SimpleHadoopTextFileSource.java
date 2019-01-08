@@ -15,10 +15,10 @@
  */
 package cz.seznam.euphoria.hadoop.input;
 
+
 import cz.seznam.euphoria.core.client.io.BoundedDataSource;
 import cz.seznam.euphoria.core.client.io.BoundedReader;
-import cz.seznam.euphoria.core.client.io.UnsplittableBoundedSource;
-import cz.seznam.euphoria.core.client.util.Pair;
+import org.apache.beam.sdk.values.KV;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
@@ -37,14 +37,14 @@ import static java.util.stream.Collectors.toList;
 public class SimpleHadoopTextFileSource implements BoundedDataSource<String> {
 
   /**
-   * Wraps a {@code BoundedReader<Pair<LongWritable, Text>>} to provide an API as
+   * Wraps a {@code BoundedReader<KV<LongWritable, Text>>} to provide an API as
    * {@code BoundedReader<String>} where the {@code Text} from the original reader
    * is transparently converted to a string.
    */
   static final class WrapReader implements BoundedReader<String> {
-    private final BoundedReader<Pair<LongWritable, Text>> wrap;
+    private final BoundedReader<KV<LongWritable, Text>> wrap;
 
-    WrapReader(BoundedReader<Pair<LongWritable, Text>> wrap) {
+    WrapReader(BoundedReader<KV<LongWritable, Text>> wrap) {
       this.wrap = Objects.requireNonNull(wrap);
     }
 
@@ -60,20 +60,20 @@ public class SimpleHadoopTextFileSource implements BoundedDataSource<String> {
 
     @Override
     public String next() {
-      Pair<LongWritable, Text> p = this.wrap.next();
-      return p.getSecond().toString();
+      KV<LongWritable, Text> p = this.wrap.next();
+      return p.getValue().toString();
     }
   }
 
   /**
-   * Wraps a {@code BoundedPartition<Pair<LongWritable, Text>>} to provide an API as
+   * Wraps a {@code BoundedPartition<KV<LongWritable, Text>>} to provide an API as
    * {@code BoundedPartition<String>} where the {@code Text} is from the original partition
    * is transparently convered to a string.
    */
   static final class WrapPartition extends UnsplittableBoundedSource<String> {
-    private final BoundedDataSource<Pair<LongWritable, Text>> wrap;
+    private final BoundedDataSource<KV<LongWritable, Text>> wrap;
 
-    WrapPartition(BoundedDataSource<Pair<LongWritable, Text>> wrap) {
+    WrapPartition(BoundedDataSource<KV<LongWritable, Text>> wrap) {
       this.wrap = Objects.requireNonNull(wrap);
     }
 

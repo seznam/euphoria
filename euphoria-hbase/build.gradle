@@ -1,8 +1,7 @@
 dependencies {
-  compile project(':euphoria-core')
   compile project(':euphoria-hadoop')
   testCompile project(':euphoria-local')
-
+  compile "org.apache.beam:beam-sdks-java-extensions-euphoria-core:2.5.0-SNAPSHOT"
   compileOnly "org.apache.hbase:hbase-common:${hbaseVersion}"
   compileOnly "org.apache.hbase:hbase-client:${hbaseVersion}"
   compileOnly "org.apache.hbase:hbase-server:${hbaseVersion}"

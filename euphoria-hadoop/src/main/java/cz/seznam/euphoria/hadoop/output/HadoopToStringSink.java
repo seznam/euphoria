@@ -17,7 +17,7 @@ package cz.seznam.euphoria.hadoop.output;
 
 import cz.seznam.euphoria.core.client.io.DataSink;
 import cz.seznam.euphoria.core.client.io.Writer;
-import cz.seznam.euphoria.core.client.util.Pair;
+import org.apache.beam.sdk.values.KV;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
@@ -98,15 +98,15 @@ public class HadoopToStringSink<T> implements DataSink<T> {
   }
 
   private static final class WriterAdapter<E> implements Writer<E> {
-    private final Writer<Pair<String, NullWritable>> impl;
+    private final Writer<KV<String, NullWritable>> impl;
 
-    WriterAdapter(Writer<Pair<String, NullWritable>> impl) {
+    WriterAdapter(Writer<KV<String, NullWritable>> impl) {
       this.impl = Objects.requireNonNull(impl);
     }
 
     @Override
     public void write(E elem) throws IOException {
-      impl.write(Pair.of(elem == null ? null : elem.toString(), NullWritable.get()));
+      impl.write(KV.of(elem == null ? null : elem.toString(), NullWritable.get()));
     }
 
     @Override

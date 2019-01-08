@@ -17,7 +17,7 @@ package cz.seznam.euphoria.hbase;
 
 import cz.seznam.euphoria.core.client.functional.VoidFunction;
 import cz.seznam.euphoria.hadoop.input.HadoopSource;
-import cz.seznam.euphoria.shadow.com.google.common.base.Preconditions;
+import com.google.common.base.Preconditions;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;

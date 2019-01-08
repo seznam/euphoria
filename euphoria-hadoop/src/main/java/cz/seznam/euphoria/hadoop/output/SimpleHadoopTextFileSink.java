@@ -17,7 +17,7 @@ package cz.seznam.euphoria.hadoop.output;
 
 import cz.seznam.euphoria.core.client.io.DataSink;
 import cz.seznam.euphoria.core.client.io.Writer;
-import cz.seznam.euphoria.core.client.util.Pair;
+import org.apache.beam.sdk.values.KV;
 import org.apache.hadoop.conf.Configuration;
 
 import java.io.IOException;
@@ -26,25 +26,25 @@ import java.util.Objects;
 /**
  * A convenience data sink based on {@link HadoopTextFileSink} to provide
  * a simpler API consuming only a single value for emission (as opposed to the
- * more general key/value pair.)
+ * more general key/value KV.)
  *
  * @param <V> the type of value emitted (as text)
  */
 public class SimpleHadoopTextFileSink<V> implements DataSink<V> {
 
   /**
-   * Wraps a {@code Writer<Pair<Void, V>>} and provides an API as {@code Writer<W>}.
+   * Wraps a {@code Writer<KV<Void, V>>} and provides an API as {@code Writer<W>}.
    */
   static final class WrapWriter<V> implements Writer<V> {
-    private final Writer<Pair<Void, V>> wrap;
+    private final Writer<KV<Void, V>> wrap;
 
-    WrapWriter(Writer<Pair<Void, V>> wrap) {
+    WrapWriter(Writer<KV<Void, V>> wrap) {
       this.wrap = Objects.requireNonNull(wrap);
     }
 
     @Override
     public void write(V elem) throws IOException {
-      wrap.write(Pair.of(null, elem));
+      wrap.write(KV.of(null, elem));
     }
 
     @Override

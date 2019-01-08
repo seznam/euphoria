@@ -16,14 +16,14 @@
 package cz.seznam.euphoria.hadoop.input;
 
 import cz.seznam.euphoria.core.client.io.BoundedDataSource;
-import cz.seznam.euphoria.core.client.util.Pair;
+import org.apache.beam.sdk.values.KV;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
-
-import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.List;
 
 /**
  * A general purpose data source based on top of hadoop input formats.
@@ -50,11 +50,14 @@ public class HadoopFileSource<K, V> extends HadoopSource<K, V> {
   }
 
   @Override
-  public List<BoundedDataSource<Pair<K, V>>> split(long desiredSplitSizeBytes) {
+  public List<BoundedDataSource<KV<K, V>>> split(long desiredSplitSizeBytes) {
     final Job job = newJob();
-    long splitSize = Math.max(MIN_SPLIT_SIZE, desiredSplitSizeBytes);
+    final long configuredSplitSize = getConf().getLong(FileInputFormat.SPLIT_MAXSIZE, MIN_SPLIT_SIZE);
+    long splitSize = Math.max(configuredSplitSize, desiredSplitSizeBytes);
+    LOG.info(String.format("desiredSplitSizeBytes  %,d,  configuredSplitSize  %,d.",
+        desiredSplitSizeBytes, configuredSplitSize));
     LOG.info(String.format("%s's max and min input split size will be set to %,d .",
-        FileInputFormat.class.getSimpleName(), desiredSplitSizeBytes));
+        FileInputFormat.class.getSimpleName(), splitSize));
 
     FileInputFormat.setMinInputSplitSize(job, splitSize);
     FileInputFormat.setMaxInputSplitSize(job, splitSize);

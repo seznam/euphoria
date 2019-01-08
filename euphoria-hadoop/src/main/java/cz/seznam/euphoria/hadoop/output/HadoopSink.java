@@ -17,7 +17,7 @@ package cz.seznam.euphoria.hadoop.output;
 
 import cz.seznam.euphoria.core.client.io.DataSink;
 import cz.seznam.euphoria.core.client.io.Writer;
-import cz.seznam.euphoria.core.client.util.Pair;
+import org.apache.beam.sdk.values.KV;
 import cz.seznam.euphoria.core.util.ExceptionUtils;
 import cz.seznam.euphoria.hadoop.HadoopUtils;
 import cz.seznam.euphoria.hadoop.SerializableWritable;
@@ -39,7 +39,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
-public class HadoopSink<K, V> implements DataSink<Pair<K, V>> {
+public class HadoopSink<K, V> implements DataSink<KV<K, V>> {
 
   private final Class<? extends OutputFormat<K, V>> outputFormatClass;
   private final SerializableWritable<Configuration> conf;
@@ -164,7 +164,7 @@ public class HadoopSink<K, V> implements DataSink<Pair<K, V>> {
   /**
    * Wraps Hadoop {@link RecordWriter}
    */
-  public static class HadoopWriter<K, V> implements Writer<Pair<K, V>> {
+  public static class HadoopWriter<K, V> implements Writer<KV<K, V>> {
 
     private final RecordWriter<K, V> hadoopWriter;
     private final OutputCommitter hadoopCommitter;
@@ -179,9 +179,9 @@ public class HadoopSink<K, V> implements DataSink<Pair<K, V>> {
     }
 
     @Override
-    public void write(Pair<K, V> record) throws IOException {
+    public void write(KV<K, V> record) throws IOException {
       try {
-        hadoopWriter.write(record.getFirst(), record.getSecond());
+        hadoopWriter.write(record.getKey(), record.getValue());
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
         throw new IOException("Interrupted while writing!");

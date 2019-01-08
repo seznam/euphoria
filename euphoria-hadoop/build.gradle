@@ -1,5 +1,5 @@
 dependencies {
-  compile project(':euphoria-core')
+  compile project(':euphoria-beam-io')
   compile "org.slf4j:slf4j-api:${slf4jVersion}"
   testCompile project(':euphoria-testing')
   testCompile "org.slf4j:log4j-over-slf4j:${slf4jVersion}"
@@ -15,6 +15,4 @@ dependencies {
     exclude group: 'log4j'
     exclude group: 'org.slf4j'
   }
-  testCompile project(path: ':euphoria-core', configuration: 'testArtifact')
-  testCompile project(':euphoria-local')
 }
