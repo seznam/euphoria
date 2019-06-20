@@ -108,9 +108,10 @@ public class Builders {
      * @return the dataset representing the new operator's output
      */
     default Dataset<V> outputValues(OutputHint... outputHints) {
+      Dataset<Pair<K, V>> out = output();
       return MapElements
-          .named("extract-values")
-          .of(output())
+          .named((out.getProducer() == null ? "" : out.getProducer().getName()) + "-values")
+          .of(out)
           .using(Pair::getSecond)
           .output(outputHints);
     }
