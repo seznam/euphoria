@@ -5,7 +5,7 @@ jdk:
   - openjdk8
 
 script:
-  - ./gradlew clean build
+  - ./gradlew clean build && mvn install -DskipTests
 
 cache:
   directories:
