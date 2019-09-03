@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 
-    Copyright 2016-2018 Seznam.cz, a.s.
+    Copyright 2016-2019 Seznam.cz, a.s.
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -69,6 +69,12 @@
     </dependency>
 
     <!-- test -->
+    <dependency>
+      <groupId>${project.groupId}</groupId>
+      <artifactId>euphoria-testing</artifactId>
+      <scope>test</scope>
+    </dependency>
+
     <dependency>
       <groupId>${project.groupId}</groupId>
       <artifactId>euphoria-operator-testkit</artifactId>

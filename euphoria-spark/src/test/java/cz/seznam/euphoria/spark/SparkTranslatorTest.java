@@ -25,7 +25,7 @@ import cz.seznam.euphoria.core.client.operator.MapElements;
 import cz.seznam.euphoria.core.client.operator.ReduceByKey;
 import cz.seznam.euphoria.core.client.operator.hint.ComputationHint;
 import cz.seznam.euphoria.core.client.util.Pair;
-import cz.seznam.euphoria.core.testing.DatasetAssert;
+import cz.seznam.euphoria.testing.DatasetAssert;
 import cz.seznam.euphoria.spark.accumulators.SparkAccumulatorFactory;
 import java.util.HashMap;
 import org.apache.spark.SparkConf;

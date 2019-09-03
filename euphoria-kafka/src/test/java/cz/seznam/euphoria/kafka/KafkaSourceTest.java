@@ -57,6 +57,7 @@ public class KafkaSourceTest {
 
   public void tryGetPartitions(List<PartitionInfo> partitions) {
     KafkaSource source = mock(KafkaSource.class);
+    @SuppressWarnings("unchecked")
     Consumer<byte[], byte[]> consumer = mock(Consumer.class);
     when(consumer.partitionsFor(any(String.class))).thenReturn(partitions);
     when(source.newConsumer(any(), any(), any())).thenReturn(consumer);

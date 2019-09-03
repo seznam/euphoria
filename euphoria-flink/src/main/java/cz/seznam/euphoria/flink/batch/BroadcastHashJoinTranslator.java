@@ -217,7 +217,8 @@ public class BroadcastHashJoinTranslator implements BatchOperatorTranslator<Join
 
     @Override
     public int compareTo(KeyedWindow other) {
-      final int compareWindowResult = this.window.compareTo(other.window);
+      @SuppressWarnings("unchecked")
+      final int compareWindowResult = window.compareTo(other.window);
       if (compareWindowResult == 0) {
         if (Objects.equals(key, other.key)) {
           return 0;
