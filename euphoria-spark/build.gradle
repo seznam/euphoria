@@ -2,6 +2,6 @@ dependencies {
   compile project(':euphoria-core')
   compile project(':euphoria-hadoop')
   compile "org.apache.spark:spark-core_${scalaVersion}:${sparkVersion}"
+  testCompile project(':euphoria-testing')
   testCompile project(':euphoria-operator-testkit')
-  testCompile project(path: ':euphoria-core', configuration: 'testArtifact')
 }
