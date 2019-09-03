@@ -183,6 +183,16 @@
           <groupId>com.mycila</groupId>
           <artifactId>license-maven-plugin</artifactId>
           <version>${license-maven-plugin.version}</version>
+          <configuration>
+            <excludes>
+              <exclude>**/.gradle/**</exclude>
+              <exclude>**/.idea/**</exclude>
+              <exclude>**/README</exclude>
+              <exclude>**/LICENSE</exclude>
+              <exclude>src/test/resources/**</exclude>
+              <exclude>src/main/resources/**</exclude>
+            </excludes>
+          </configuration>
           <dependencies>
             <dependency>
               <groupId>com.mycila</groupId>
