@@ -26,9 +26,6 @@ import cz.seznam.euphoria.core.util.ExceptionUtils;
 import cz.seznam.euphoria.executor.local.LocalExecutor;
 import cz.seznam.euphoria.hadoop.HadoopUtils;
 import cz.seznam.euphoria.testing.DatasetAssert;
-import java.nio.file.Paths;
-import java.util.function.Function;
-import java.util.stream.Stream;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.LongWritable;
@@ -43,16 +40,19 @@ import org.apache.hadoop.mapreduce.lib.input.SequenceFileRecordReader;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
+import org.junit.runners.Parameterized.Parameters;
 
 import java.io.File;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Function;
 import java.util.stream.Collectors;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Parameterized.Parameters;
+import java.util.stream.Stream;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -211,7 +211,7 @@ public class HadoopSinkTest<I, O, S extends DataSource<I>, T extends DataSink<I>
                     new SequenceFileRecordReader<>()) {
                   final Path path = new Path(outputDir + "/" + part);
                   final TaskAttemptContext taskContext =
-                      HadoopUtils.createTaskContext(new Configuration(), HadoopUtils.getJobID(), 0);
+                      HadoopUtils.createTaskContext(new Configuration(), HadoopUtils.getJobID(), 0, (int)System.currentTimeMillis()/1000);
                   reader.initialize(
                       new FileSplit(path, 0L, Long.MAX_VALUE, new String[] {"localhost"}),
                       taskContext);
@@ -267,7 +267,7 @@ public class HadoopSinkTest<I, O, S extends DataSource<I>, T extends DataSink<I>
                 try (final KeyValueLineRecordReader reader = new KeyValueLineRecordReader(conf)) {
                   final Path path = new Path(outputDir + "/" + part);
                   final TaskAttemptContext taskContext =
-                      HadoopUtils.createTaskContext(new Configuration(), HadoopUtils.getJobID(), 0);
+                      HadoopUtils.createTaskContext(new Configuration(), HadoopUtils.getJobID(), 0, (int)System.currentTimeMillis()/1000);
                   reader.initialize(
                       new FileSplit(path, 0L, Long.MAX_VALUE, new String[] {"localhost"}),
                       taskContext);
@@ -318,7 +318,7 @@ public class HadoopSinkTest<I, O, S extends DataSource<I>, T extends DataSink<I>
                 try (final LineRecordReader reader = new LineRecordReader()) {
                   final Path path = new Path(outputDir + "/" + part);
                   final TaskAttemptContext taskContext =
-                      HadoopUtils.createTaskContext(new Configuration(), HadoopUtils.getJobID(), 0);
+                      HadoopUtils.createTaskContext(new Configuration(), HadoopUtils.getJobID(), 0, (int)System.currentTimeMillis()/1000);
                   reader.initialize(
                       new FileSplit(path, 0L, Long.MAX_VALUE, new String[] {"localhost"}),
                       taskContext);
@@ -369,7 +369,7 @@ public class HadoopSinkTest<I, O, S extends DataSource<I>, T extends DataSink<I>
                 try (final LineRecordReader reader = new LineRecordReader()) {
                   final Path path = new Path(outputDir + "/" + part);
                   final TaskAttemptContext taskContext =
-                      HadoopUtils.createTaskContext(new Configuration(), HadoopUtils.getJobID(), 0);
+                      HadoopUtils.createTaskContext(new Configuration(), HadoopUtils.getJobID(), 0, (int)System.currentTimeMillis()/1000);
                   reader.initialize(
                       new FileSplit(path, 0L, Long.MAX_VALUE, new String[] {"localhost"}),
                       taskContext);

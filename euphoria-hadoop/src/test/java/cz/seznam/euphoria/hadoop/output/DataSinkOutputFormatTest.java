@@ -107,9 +107,9 @@ public class DataSinkOutputFormatTest {
     final TaskAttemptContext setupContext =
         HadoopUtils.createSetupTaskContext(conf, HadoopUtils.getJobID());
     final TaskAttemptContext firstContext =
-        HadoopUtils.createTaskContext(conf, HadoopUtils.getJobID(), 0);
+        HadoopUtils.createTaskContext(conf, HadoopUtils.getJobID(), 0, (int)System.currentTimeMillis()/1000);
     final TaskAttemptContext secondContext =
-        HadoopUtils.createTaskContext(conf, HadoopUtils.getJobID(), 1);
+        HadoopUtils.createTaskContext(conf, HadoopUtils.getJobID(), 1, (int)System.currentTimeMillis()/1000);
     final TaskAttemptContext cleanupContext =
         HadoopUtils.createCleanupTaskContext(conf, HadoopUtils.getJobID());
 
