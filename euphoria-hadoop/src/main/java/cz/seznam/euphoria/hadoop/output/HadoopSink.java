@@ -90,7 +90,7 @@ public class HadoopSink<K, V> implements DataSink<Pair<K, V>> {
   public HadoopWriter<K, V> openWriter(int partitionId) {
     try {
       final TaskAttemptContext taskContext =
-          HadoopUtils.createTaskContext(conf.get(), jobID.get(), partitionId);
+          HadoopUtils.createTaskContext(conf.get(), jobID.get(), partitionId, (int)System.currentTimeMillis()/1000);
       final OutputFormat<K, V> outputFormat =
           getOutputFormat(taskContext.getTaskAttemptID());
       return new HadoopWriter<>(

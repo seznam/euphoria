@@ -51,9 +51,13 @@ public class HadoopUtils {
     return new TaskAttemptContextImpl(conf, new TaskAttemptID(taskId, 0));
   }
 
-  public static TaskAttemptContext createTaskContext(Configuration conf, JobID jobID, int taskNumber) {
+  /**
+   * @param taskNumber identifies task, typically partition id
+   * @param taskAttemptId used to distinguish between same task but different attempt (speculative execution or new attempt)
+   */
+  public static TaskAttemptContext createTaskContext(Configuration conf, JobID jobID, int taskNumber, int taskAttemptId) {
     final TaskID taskId = new TaskID(jobID, TaskType.REDUCE, taskNumber);
-    return new TaskAttemptContextImpl(conf, new TaskAttemptID(taskId, 0));
+    return new TaskAttemptContextImpl(conf, new TaskAttemptID(taskId, taskAttemptId));
   }
 
 }
