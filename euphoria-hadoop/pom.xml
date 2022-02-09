@@ -94,7 +94,7 @@
   </dependencies>
 
   <properties>
-    <hadoop.version>2.7.4</hadoop.version>
+    <hadoop.version>2.10.1</hadoop.version>
   </properties>
 
 </project>
